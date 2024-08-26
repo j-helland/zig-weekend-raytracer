@@ -1,0 +1,15 @@
+.{
+    .name = "weekend-raytracer",
+    .version = "0.0.0",
+    // This field is optional. Doesn't do anything as of current compiler version.
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+    },
+    // Stuff included in checksum.
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}
