@@ -2,6 +2,7 @@ const std = @import("std");
 const AllocatorError = std.mem.Allocator.Error;
 
 const math = @import("math.zig");
+const Real = math.Real;
 const Vec3 = math.Vec3;
 const Point3 = Vec3;
 const Color = Vec3;
@@ -13,7 +14,7 @@ pub const HitRecord = struct {
 
     point: Point3 = .{0, 0, 0},
     normal: Vec3 = .{0, 0, 0},
-    t: f32 = std.math.inf(f32),
+    t: Real = std.math.inf(Real),
     b_front_face: bool = false,
 
     pub fn setFrontFaceNormal(self: *Self, ray: *const Ray, outward_normal: Vec3) void {
@@ -26,7 +27,7 @@ pub const HitRecord = struct {
 
 pub const HitContext = struct {
     ray: *const Ray,
-    trange: Interval(f32),
+    trange: Interval(Real),
 };
 
 pub const Entity = union(enum) {
@@ -85,7 +86,7 @@ pub const SphereEntity = struct {
     const Self = @This();
 
     center: Point3,
-    radius: f32,
+    radius: Real,
 
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
         // direction from ray to sphere center
@@ -122,7 +123,7 @@ pub const Ray = struct {
     origin: Point3,
     direction: Vec3,
 
-    pub fn at(self: *const Self, t: f32) Point3 {
+    pub fn at(self: *const Self, t: Real) Point3 {
         return self.origin + vec3s(t) * self.direction;
     }
 };

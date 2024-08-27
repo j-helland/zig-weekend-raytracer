@@ -2,6 +2,7 @@ const std = @import("std");
 const AllocatorError = std.mem.Allocator.Error;
 
 const math = @import("math.zig");
+const Real = math.Real;
 const Vec3 = math.Vec3;
 const Point3 = Vec3;
 const Color = Vec3;
@@ -22,7 +23,7 @@ const Camera = cam.Camera;
 fn rayColor(ray: *const Ray, entity: *const Entity) Vec3 {
     const ctx = HitContext{ 
         .ray = ray, 
-        .trange = Interval(f32){ .min = 0.0, .max = std.math.inf(f32) },
+        .trange = Interval(Real){ .min = 0.0, .max = std.math.inf(Real) },
     };
     var record = HitRecord{};
     if (entity.hit(ctx, &record)) {
@@ -63,10 +64,12 @@ pub fn main() !void {
     var framebuffer = try cam.Framebuffer.init(allocator, img_height, img_width);
     defer framebuffer.deinit();
 
+    std.log.debug("Rendering image...", .{});
     try camera.render(&world, &framebuffer);
 
     // ---- write ----
     // TODO: create separate encoder struct
+    std.log.debug("Writing image...", .{});
     try framebuffer.write(allocator, &stdout);
 
     std.log.info("DONE", .{});

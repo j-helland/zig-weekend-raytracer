@@ -1,18 +1,61 @@
 const std = @import("std");
 
-pub const Vec3 = @Vector(3, f32);
+pub const Real = f64;
+pub const Vec3 = @Vector(3, Real);
 
-pub inline fn lerp(x: Vec3, y: Vec3, alpha: f32) Vec3 {
+pub const INTERVAL_EMPTY = Interval(Real){ .min = std.math.inf(Real), .max = -std.math.inf(Real) };
+pub const INTERVAL_UNIVERSE = Interval(Real){ .min = -std.math.inf(Real), .max = std.math.inf(Real) };
+pub const GAMMA = 2.2;
+pub const INV_GAMMA = 1.0 / GAMMA;
+
+pub fn Interval(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        min: T,
+        max: T,
+
+        pub inline fn size(self: *const Self) T {
+            return self.max - self.min;
+        }
+
+        /// Containment including boundary.
+        pub inline fn contains(self: *const Self, t: T) bool {
+            return (self.min <= t) and (t <= self.max);
+        }
+
+        /// Containment excluding boundary.
+        pub inline fn surrounds(self: *const Self, t: T) bool {
+            return (self.min < t) and (t < self.max);
+        }
+
+        pub inline fn clamp(self: *const Self, t: T) T {
+            return std.math.clamp(t, self.min, self.max);
+        }
+    };
+}
+
+pub inline fn gammaCorrection(v: Vec3) Vec3 {
+    return Vec3{
+        gammaCorrectionReal(v[0]),
+        gammaCorrectionReal(v[1]),
+        gammaCorrectionReal(v[2]),
+    };
+}
+
+pub inline fn gammaCorrectionReal(x: Real) Real {
+    return std.math.pow(Real, x, INV_GAMMA);
+}
+
+pub inline fn lerp(x: Vec3, y: Vec3, alpha: Real) Vec3 {
     return x + vec3s(alpha) * (y - x);
 }
 
-pub inline fn vec3s(x: f32) Vec3 {
+pub inline fn vec3s(x: Real) Vec3 {
     return @splat(x);
 }
 
-const Vec3Component = enum(i32) { x, y, z };
-
-pub inline fn dot(u: Vec3, v: Vec3) f32 {
+pub inline fn dot(u: Vec3, v: Vec3) Real {
     const xmm = u * v;
     return xmm[0] + xmm[1] + xmm[2];
 }
@@ -24,7 +67,7 @@ test "dot" {
     try std.testing.expectApproxEqRel(6.0, d, 1e-8);
 }
 
-pub inline fn length(u: Vec3) f32 {
+pub inline fn length(u: Vec3) Real {
     return @sqrt(dot(u, u));
 } 
 
@@ -40,30 +83,4 @@ pub inline fn normalize(u: Vec3) Vec3 {
 test "normalize" {
     const u = Vec3{1, 2, 3};
     try std.testing.expectApproxEqRel(1.0, length(normalize(u)), 1e-6);
-}
-
-pub const INTERVAL_EMPTY = Interval(f32){ .min = std.math.inf(f32), .max = -std.math.inf(f32) };
-pub const INTERVAL_UNIVERSE = Interval(f32){ .min = -std.math.inf(f32), .max = std.math.inf(f32) };
-
-pub fn Interval(comptime T: type) type {
-    return struct {
-        const Self = @This();
-
-        min: T,
-        max: T,
-
-        pub inline fn size(self: *const Self) f32 {
-            return self.max - self.min;
-        }
-
-        /// Containment including boundary.
-        pub fn contains(self: *const Self, t: f32) bool {
-            return (self.min <= t) and (t <= self.max);
-        }
-
-        /// Containment excluding boundary.
-        pub fn surrounds(self: *const Self, t: f32) bool {
-            return (self.min < t) and (t < self.max);
-        }
-    };
 }
