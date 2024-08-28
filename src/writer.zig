@@ -3,6 +3,8 @@ const std = @import("std");
 const math = @import("math.zig");
 const Real = math.Real;
 const Color = math.Vec3;
+ 
+const mmap = @import("mmap.zig");
 
 pub const WriterPPM = struct {
     const Self = @This();
@@ -15,27 +17,16 @@ pub const WriterPPM = struct {
     thread_pool: *std.Thread.Pool,
 
     pub fn write(self: *Self, out_path: []const u8, data: []const Color, num_cols: usize, num_rows: usize) !void {
-        if (@import("builtin").os.tag == .windows) {
-            // mmap not available on windows
-            // TODO: call CreateFileMapping + MapViewOfFile
-            return error.WindowsNotSupported;
-        }
-
         // Create and memory map file
-        const file = try std.fs.cwd().createFile(out_path, .{ .read = true });
-        defer file.close();
-
         const header = try std.fmt.allocPrint(self.allocator, PPM_HEADER_FMT, .{ num_cols, num_rows });
         defer self.allocator.free(header);
-
         const content_size = data.len * PPM_PIXEL_NUM_BYTES + header.len;
-        try file.setEndPos(content_size);
 
-        const ptr = try std.posix.mmap(null, content_size, std.posix.PROT.READ | std.posix.PROT.WRITE, .{ .TYPE = .SHARED }, file.handle, 0);
-        defer std.posix.munmap(ptr);
+        const handle = try mmap.MmapHandlePosix.init(out_path, content_size);
+        defer handle.deinit();
 
         // Write header.
-        std.mem.copyForwards(u8, ptr, header);
+        std.mem.copyForwards(u8, handle.ptr, header);
 
         // Write body.
         const chunk_size = 1024;
@@ -54,7 +45,7 @@ pub const WriterPPM = struct {
 
             self.thread_pool.spawnWg(&wg, writeChunk, .{ 
                 WriterThreadContext{
-                    .out_ptr = ptr[file_index..file_index + chunk_content_size],
+                    .out_ptr = handle.ptr[file_index..file_index + chunk_content_size],
                     .data = data_slice, 
                 },
             });

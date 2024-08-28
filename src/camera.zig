@@ -149,10 +149,6 @@ pub const Camera = struct {
     pub fn render(self: *const Self, entity: *const Entity, framebuffer: *Framebuffer) !void {
         var wg = std.Thread.WaitGroup{};
 
-        // Similar to GPU 4x4 pixel shading work groups, except that here we use row-major order lines.
-        const block_size = 32;
-        std.debug.assert(self.image_width % block_size == 0);
-
         var render_thread_context = RenderThreadContext{
             .entity = entity,
 
@@ -173,6 +169,9 @@ pub const Camera = struct {
             .samples_per_pixel = self.samples_per_pixel,
             .max_ray_bounce_depth = self.max_ray_bounce_depth,
         };
+
+        // Similar to GPU 4x4 pixel shading work groups, except that here we use row-major order lines and use bigger chunks due to OS thread overhead.
+        const block_size = 32;
 
         // Write pixels into shared image. No need to lock since the image is partitioned into non-overlapping lines.
         for (0..self.image_height) |v| {
