@@ -44,8 +44,8 @@ pub fn main() !void {
     // ---- materials ----
     const mat_ground = Material{ .lambertian = LambertianMaterial{ .albedo = Color{0.8, 0.8, 0.0} } };
     const mat_sphere_diffuse = Material{ .lambertian = LambertianMaterial{ .albedo = Color{0.1, 0.2, 0.5} } };
-    const mat_metal_left = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.8, 0.8} } };
-    const mat_metal_right = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.6, 0.2} } };
+    const mat_metal_left = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.8, 0.8}, .fuzz = 0.0 } };
+    const mat_metal_right = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.6, 0.2}, .fuzz = 0.45 } };
 
     // ---- scene initialization ----
     var scene = EntityCollection.init(allocator);

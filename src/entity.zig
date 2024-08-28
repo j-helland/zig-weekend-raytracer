@@ -57,13 +57,16 @@ pub const MetalMaterial = struct {
     const Self = @This();
 
     albedo: Color,
+    fuzz: Real,
 
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
-        const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal);
+        const blur = math.vec3s(std.math.clamp(self.fuzz, 0, 1));
+        const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) 
+            + blur * rng.sampleUnitSphere(ctx.random);
         const origin = ctx.hit_record.point;
         ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
         ctx.attenuation.* = self.albedo;
-        return true;
+        return (math.dot(scatter_direction, ctx.hit_record.normal) > 0.0);
     }
 };
 
