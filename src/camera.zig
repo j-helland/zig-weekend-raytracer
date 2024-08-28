@@ -69,44 +69,99 @@ pub const Framebuffer = struct {
 pub const Camera = struct {
     const Self = @This();
 
-    aspect_ratio: Real = 1.0,
-    image_width: usize = 200,
-    image_height: usize = 100,
-    samples_per_pixel: usize = 100,
-    max_ray_bounce_depth: usize = 50,
+    fov_vertical: Real = 90.0,
+    look_from: Point3 = .{0, 0, 0},
+    look_at: Point3 = .{0, 0, -1},
+    view_up: Vec3 = .{0, 1, 0},
+    basis_u: Vec3,
+    basis_v: Vec3,
+    basis_w: Vec3,
+
+    aspect_ratio: Real,
+    image_width: usize,
+    image_height: usize,
     center: Point3,
     pixel00_loc: Point3,
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
+
+    defocus_angle: Real = 0,
+    focus_dist: Real = 10,
+    defocus_disk_u: Vec3,
+    defocus_disk_v: Vec3,
+
+    samples_per_pixel: usize = 100,
+    max_ray_bounce_depth: usize = 50,
+
     thread_pool: *std.Thread.Pool,
 
-    pub fn init(thread_pool: *std.Thread.Pool, img_width: usize, img_height: usize, focal_length: Real) Self {
-        const aspect_ratio = (@as(Real, @floatFromInt(img_width)) / @as(Real, @floatFromInt(img_height)));
-        const viewport_height = 2.0;
-        const viewport_width = viewport_height * aspect_ratio;
-        const camera_center = Point3{0, 0, 0};
+    pub fn init(
+        thread_pool: *std.Thread.Pool, 
+        aspect: Real,
+        img_width: usize, 
+        fov_vertical: Real,
+        look_from: Point3,
+        look_at: Point3,
+        view_up: Vec3,
+        focus_dist: Real,
+        defocus_angle: Real,
+    ) Self {
+        const img_height = @as(usize, @intFromFloat(@as(Real, @floatFromInt(img_width)) / aspect));
 
-        const viewport_u = Vec3{viewport_width, 0, 0}; // horizontal right
-        const viewport_v = Vec3{0, -viewport_height, 0}; // vertical downwards
+        // viewport dimensions
+        const theta = std.math.degreesToRadians(fov_vertical);
+        const h = @tan(theta / 2.0);
+        const viewport_height = 2.0 * h * focus_dist;
+        const viewport_width = viewport_height * aspect;
+
+        // coordinate frame basis vectors
+        const w = math.normalize(look_from - look_at);
+        const u = math.normalize(math.cross(view_up, w));
+        const v = math.cross(w, u);
+
+        // vectors across horizontal and down vertical viewport edges
+        const viewport_u = math.vec3s(viewport_width) * u; // across horizontal
+        const viewport_v = math.vec3s(-viewport_height) * v; // down vertical
 
         const pixel_delta_u = viewport_u / math.vec3s(@floatFromInt(img_width));
         const pixel_delta_v = viewport_v / math.vec3s(@floatFromInt(img_height));
 
         // upper left pixel location
-        const viewport_upper_left = camera_center 
-            - Vec3{0, 0, focal_length} 
+        const viewport_upper_left = look_from 
+            - (math.vec3s(focus_dist) * w)
             - viewport_u / math.vec3s(2) 
             - viewport_v / math.vec3s(2);
         const pixel00_loc = viewport_upper_left + math.vec3s(0.5) * (pixel_delta_u + pixel_delta_v);        
 
+        // calculate camera defocus disk basis vectors
+        const defocus_radius = math.vec3s(focus_dist * @tan(std.math.degreesToRadians(defocus_angle / 2.0)));
+        const defocus_disk_u = u * defocus_radius;
+        const defocus_disk_v = v * defocus_radius;
+
         return .{
-            .aspect_ratio = aspect_ratio,
-            .image_width = img_width, 
-            .image_height = img_height,
-            .center = camera_center,
-            .pixel00_loc = pixel00_loc,
+            .fov_vertical = fov_vertical,
+            .center = look_from,
+            .look_at = look_at,
+            .look_from = look_from,
+            .view_up = view_up,
+
+            .basis_u = u,
+            .basis_v = v,
+            .basis_w = w,
+
             .pixel_delta_u = pixel_delta_u,
             .pixel_delta_v = pixel_delta_v,
+
+            .aspect_ratio = aspect,
+            .image_width = img_width, 
+            .image_height = img_height,
+            .pixel00_loc = pixel00_loc,
+
+            .defocus_angle = defocus_angle,
+            .focus_dist = focus_dist,
+            .defocus_disk_u = defocus_disk_u,
+            .defocus_disk_v = defocus_disk_v,
+
             .thread_pool = thread_pool,
         };
     }
@@ -117,19 +172,26 @@ pub const Camera = struct {
         var wg = std.Thread.WaitGroup{};
 
         // Similar to GPU 4x4 pixel shading work groups, except that here we use row-major order lines.
-        const block_size = 16;
+        const block_size = 8;
         std.debug.assert(self.image_width % block_size == 0);
 
         var render_thread_context = RenderThreadContext{
             .entity = entity,
+
             .framebuffer = framebuffer.buffer,
             .row_idx = 0,
             .col_range = .{ .min = 0, .max = 0 },
             .num_cols = self.image_width,
+
             .pixel00_loc = self.pixel00_loc,
             .delta_u = self.pixel_delta_u,
             .delta_v = self.pixel_delta_v,
             .center = self.center,
+
+            .defocus_angle = self.defocus_angle,
+            .defocus_disk_u = self.defocus_disk_u,
+            .defocus_disk_v = self.defocus_disk_v,
+
             .samples_per_pixel = self.samples_per_pixel,
             .max_ray_bounce_depth = self.max_ray_bounce_depth,
         };
@@ -164,6 +226,10 @@ const RenderThreadContext = struct {
     delta_u: Vec3,
     delta_v: Vec3,
     center: Point3,
+
+    defocus_angle: Real,
+    defocus_disk_u: Vec3,
+    defocus_disk_v: Vec3,
 
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
@@ -203,13 +269,18 @@ fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
         if (ctx.samples_per_pixel == 1) Vec3{0, 0, 0} 
         else rng.sampleSquareXY(rng.getThreadRng());
     const sample = ctx.pixel00_loc 
-        + ctx.delta_u * Vec3{@as(Real, @floatFromInt(col_idx)) + offset[0], 0, 0}
-        + ctx.delta_v * Vec3{0, @as(Real, @floatFromInt(ctx.row_idx)) + offset[1], 0};
+        + ctx.delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0])
+        + ctx.delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
 
-    const origin = ctx.center;
+    const origin = if (ctx.defocus_angle <= 0.0) ctx.center else sampleDefocusDisk(ctx);
     const direction = sample - origin;
     const ray = Ray{ .origin = origin, .direction = direction };
     return ray;
+}
+
+fn sampleDefocusDisk(ctx: *const RenderThreadContext) Vec3 {
+    const p = rng.sampleUnitDiskXY(rng.getThreadRng(), 1.0);
+    return ctx.center + math.vec3s(p[0]) * ctx.defocus_disk_u + math.vec3s(p[1]) * ctx.defocus_disk_v;
 }
 
 /// Computes the pixel color for the scene.
@@ -233,7 +304,7 @@ fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize) Color {
     // Hit recursion to simulate ray bouncing.
     if (entity.hit(ctx, &record)) {
         var ray_scattered: Ray = undefined;
-        var attenuation_color: Color = undefined;
+        var attenuation_color: Color = .{1, 1, 1};
         const ctx_scatter = ScatterContext{ 
             .random = rng.getThreadRng(), 
             .ray_incoming = ray, 

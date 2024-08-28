@@ -24,11 +24,13 @@ pub const Material = union(enum) {
     
     lambertian: LambertianMaterial,
     metal: MetalMaterial,
+    dielectric: DielectricMaterial,
 
     pub fn scatter(self: Self, ctx: ScatterContext) bool {
         return switch (self) {
             .lambertian => |m| m.scatter(ctx),
             .metal => |m| m.scatter(ctx),
+            .dielectric => |m| m.scatter(ctx),
         };
     }
 };
@@ -37,6 +39,10 @@ pub const LambertianMaterial = struct {
     const Self = @This();
 
     albedo: Color,
+
+    pub fn initMaterial(albedo: Color) Material {
+        return Material{ .lambertian = Self{ .albedo = albedo } };
+    }
 
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
         var scatter_direction = ctx.hit_record.normal + rng.sampleUnitSphere(ctx.random);
@@ -59,6 +65,10 @@ pub const MetalMaterial = struct {
     albedo: Color,
     fuzz: Real,
 
+    pub fn initMaterial(albedo: Color, fuzz: Real) Material {
+        return Material{ .metal = Self{ .albedo = albedo, .fuzz = fuzz } };
+    }
+
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
         const blur = math.vec3s(std.math.clamp(self.fuzz, 0, 1));
         const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) 
@@ -67,6 +77,45 @@ pub const MetalMaterial = struct {
         ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
         ctx.attenuation.* = self.albedo;
         return (math.dot(scatter_direction, ctx.hit_record.normal) > 0.0);
+    }
+};
+
+pub const DielectricMaterial = struct {
+    const Self = @This();
+
+    refraction_index: Real,
+
+    pub fn initMaterial(refraction_index: Real) Material {
+        return Material{ .dielectric = Self{ .refraction_index = refraction_index } };
+    }
+
+    pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+        const index = 
+            if (ctx.hit_record.b_front_face) 1.0 / self.refraction_index 
+            else self.refraction_index;
+        const in_unit_direction = math.normalize(ctx.ray_incoming.direction);
+
+        const cos_theta = @min(math.dot(-in_unit_direction, ctx.hit_record.normal), 1.0);
+        const sin_theta = @sqrt(1 - cos_theta * cos_theta);
+
+        const scatter_direction = 
+            if (index * sin_theta > 1.0 or self.reflectance(cos_theta) > ctx.random.float(Real)) 
+                // must reflect
+                math.reflect(in_unit_direction, ctx.hit_record.normal)
+            else 
+                // can refract
+                math.refract(in_unit_direction, ctx.hit_record.normal, index);
+
+        const origin = ctx.hit_record.point;
+        ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
+        return true;
+    }
+
+    /// Schlick Fresnel approximation for dielectric reflectance.
+    fn reflectance(self: *const Self, cosine: Real) Real {
+        var r0 = (1 - self.refraction_index) / (1 + self.refraction_index);
+        r0 *= r0;
+        return r0 + (1 - r0) * std.math.pow(Real, (1 - cosine), 5);
     }
 };
 
@@ -150,6 +199,10 @@ pub const SphereEntity = struct {
     center: Point3,
     radius: Real,
     material: *const Material,
+
+    pub fn initEntity(center: Point3, radius: Real, material: *const Material) Entity {
+        return Entity{ .sphere = Self{ .center = center, .radius = radius, .material = material } };
+    }
 
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
         // direction from ray to sphere center

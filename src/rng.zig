@@ -57,15 +57,13 @@ pub fn sampleSquareXY(rng: std.Random) Point3 {
     };
 }
 
-/// Returns random point in disc of radius 0.5 centered at (0, 0).
-pub fn sampleDiscXY(rng: std.Random) Point3 {
-    const radius = rng.float(f32) * 0.5;
-    const theta = rng.float(f32) * std.math.pi * 2.0;
-    return Vec3{
-        radius * @cos(theta),
-        radius * @sin(theta),
-        0.0,
-    };
+pub inline fn sampleUnitCircleXY(rng: std.Random) Point3 {
+    return math.normalize(Point3{ rng.floatNorm(math.Real), rng.floatNorm(math.Real), 0 });
+}
+
+/// Returns random point in disc of radius centered at (0, 0).
+pub fn sampleUnitDiskXY(rng: std.Random, radius: math.Real) Point3 {
+    return math.vec3s(radius * rng.float(math.Real)) * sampleUnitCircleXY(rng);
 }
 
 /// Returns random point in unit ball.

@@ -19,11 +19,14 @@ const HitRecord = ent.HitRecord;
 const Material = ent.Material;
 const MetalMaterial = ent.MetalMaterial;
 const LambertianMaterial = ent.LambertianMaterial;
+const DielectricMaterial = ent.DielectricMaterial;
+
+const rng = @import("rng.zig");
 
 const cam = @import("camera.zig");
 const Camera = cam.Camera;
 
-pub fn main() !void {    
+pub fn main() !void {
     // ---- allocator ----
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -34,38 +37,94 @@ pub fn main() !void {
     try pool.init(.{ .allocator = allocator });
     defer pool.deinit();
 
-    // camera
-    const img_width = 800;
-    const img_height = 400;
-    const focal_length = 1.0;
-    const camera = Camera.init(&pool, img_width, img_height, focal_length);
-    const stdout = std.io.getStdOut().writer();
-
     // ---- materials ----
-    const mat_ground = Material{ .lambertian = LambertianMaterial{ .albedo = Color{0.8, 0.8, 0.0} } };
-    const mat_sphere_diffuse = Material{ .lambertian = LambertianMaterial{ .albedo = Color{0.1, 0.2, 0.5} } };
-    const mat_metal_left = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.8, 0.8}, .fuzz = 0.0 } };
-    const mat_metal_right = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.6, 0.2}, .fuzz = 0.45 } };
-
-    // ---- scene initialization ----
     var scene = EntityCollection.init(allocator);
     defer scene.deinit();
-    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{0, 0, -1.2}, .radius = 0.5, .material = &mat_sphere_diffuse } });
-    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{0, -100.5, -1}, .radius = 100.0, .material = &mat_ground } });
-    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{-1, 0, -1}, .radius = 0.5, .material = &mat_metal_left } });
-    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{1, 0, -1}, .radius = 0.5, .material = &mat_metal_right } });
-    const world = Entity{ .collection = scene };
+    try scene.entities.ensureTotalCapacity(22*22 + 3);
+
+    var materials = std.ArrayList(Material).init(allocator);
+    defer materials.deinit();
+    try materials.ensureTotalCapacity(22*22);
+
+    const material_ground = LambertianMaterial.initMaterial(Color{0.5, 0.5, 0.5});
+    try scene.add(SphereEntity.initEntity(Point3{0, -1000, 0}, 1000, &material_ground));
+
+    const rand = rng.getThreadRng();
+    var a: Real = -11.0;
+    while (a < 11.0) : (a += 1.0) {
+        var b: Real = -11.0;
+        while (b < 11.0) : (b += 1.0) {
+            const choose_mat = rand.float(Real); 
+            const center = Point3{ a + 0.9*rand.float(Real), 0.2, b + 0.9*rand.float(Real) };
+
+            if (math.length(center - Point3{4, 0.2, 0}) > 0.9) {
+                if (choose_mat < 0.8) {
+                    // diffuse
+                    const albedo = rng.sampleVec3(rand);
+                    try materials.append(LambertianMaterial.initMaterial(albedo));
+                    try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                } else if (choose_mat < 0.95) {
+                    // metal
+                    const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
+                    const fuzz = rand.float(Real) * 0.8;
+                    try materials.append(MetalMaterial.initMaterial(albedo, fuzz));
+                    try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                } else {
+                    // glass
+                    try materials.append(DielectricMaterial.initMaterial(1.5));
+                    try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                }
+            }
+        }
+    }
+
+    const material1 = DielectricMaterial.initMaterial(1.5);
+    try scene.add(SphereEntity.initEntity(Point3{0, 1, 0}, 1.0, &material1));
+
+    const material2 = LambertianMaterial.initMaterial(Color{0.4, 0.2, 0.1});
+    try scene.add(SphereEntity.initEntity(Point3{-4, 1, 0}, 1, &material2));
+
+    const material3 = MetalMaterial.initMaterial(Color{0.7, 0.6, 0.5}, 0.0);
+    try scene.add(SphereEntity.initEntity(Point3{4, 1, 0}, 1, &material3));
+
+    std.debug.print("MATERIALS: {any}\n", .{materials.items.len});
+    std.debug.print("SCENE: {any}\n", .{scene.entities.items.len});
+
+    // camera
+    const img_width = 800;
+    const aspect = 16.0 / 9.0;
+    const fov_vertical = 20.0;
+    const look_from = Point3{13, 2, 3};
+    const look_at = Point3{0, 0, 0};
+    const view_up = Vec3{ 0, 1, 0 };
+    const focus_dist = 10.0;
+    const defocus_angle = 0.6;
+    var camera = Camera.init(
+        &pool,
+        aspect,
+        img_width,
+        fov_vertical,
+        look_from,
+        look_at,
+        view_up,
+        focus_dist,
+        defocus_angle,
+    );
+    camera.samples_per_pixel = 300;
+    camera.max_ray_bounce_depth = 30;
 
     // ---- render ----
-    var framebuffer = try cam.Framebuffer.init(allocator, img_height, img_width);
+    var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, img_width);
     defer framebuffer.deinit();
 
     std.log.debug("Rendering image...", .{});
+    const world = Entity{ .collection = scene };
     try camera.render(&world, &framebuffer);
 
     // ---- write ----
     // TODO: create separate encoder struct
     std.log.debug("Writing image...", .{});
+    const stdout = std.io.getStdOut().writer();
     try framebuffer.write(allocator, &stdout);
 
     std.log.info("DONE", .{});
