@@ -9,11 +9,70 @@ const Color = Vec3;
 const vec3s = math.vec3s;
 const Interval = math.Interval;
 
+const rng = @import("rng.zig");
+
+pub const ScatterContext = struct {
+    random: std.Random,
+    ray_incoming: *const Ray, 
+    hit_record: *const HitRecord, 
+    attenuation: *Color, 
+    ray_scattered: *Ray,
+};
+
+pub const Material = union(enum) {
+    const Self = @This();
+    
+    lambertian: LambertianMaterial,
+    metal: MetalMaterial,
+
+    pub fn scatter(self: Self, ctx: ScatterContext) bool {
+        return switch (self) {
+            .lambertian => |m| m.scatter(ctx),
+            .metal => |m| m.scatter(ctx),
+        };
+    }
+};
+
+pub const LambertianMaterial = struct {
+    const Self = @This();
+
+    albedo: Color,
+
+    pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+        var scatter_direction = ctx.hit_record.normal + rng.sampleUnitSphere(ctx.random);
+
+        // handle degenerate scattering direction
+        if (math.isVec3NearZero(scatter_direction)) {
+            scatter_direction = ctx.hit_record.normal;
+        }
+
+        const origin = ctx.hit_record.point;
+        ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
+        ctx.attenuation.* = self.albedo;
+        return true;
+    }
+};
+
+pub const MetalMaterial = struct {
+    const Self = @This();
+
+    albedo: Color,
+
+    pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+        const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal);
+        const origin = ctx.hit_record.point;
+        ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
+        ctx.attenuation.* = self.albedo;
+        return true;
+    }
+};
+
 pub const HitRecord = struct {
     const Self = @This();
 
     point: Point3 = .{0, 0, 0},
     normal: Vec3 = .{0, 0, 0},
+    material: ?*const Material = null,
     t: Real = std.math.inf(Real),
     b_front_face: bool = false,
 
@@ -87,6 +146,7 @@ pub const SphereEntity = struct {
 
     center: Point3,
     radius: Real,
+    material: *const Material,
 
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
         // direction from ray to sphere center
@@ -112,6 +172,7 @@ pub const SphereEntity = struct {
         hit_record.point = ctx.ray.at(hit_record.t);
         const outward_normal = (hit_record.point - self.center) / vec3s(self.radius);
         hit_record.setFrontFaceNormal(ctx.ray, outward_normal);
+        hit_record.material = self.material;
 
         return true;
     }

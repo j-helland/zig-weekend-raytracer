@@ -12,17 +12,12 @@ const Entity = ent.Entity;
 const Ray = ent.Ray;
 const HitRecord = ent.HitRecord;
 const HitContext = ent.HitContext;
+const Material = ent.Material;
+const MetalMaterial = ent.MetalMaterial;
+const LambertiaMaterial = ent.LambertianMaterial;
+const ScatterContext = ent.ScatterContext;
 
 const rng = @import("rng.zig");
-
-threadlocal var g_RNG: ?std.Random.DefaultPrng = null;
-fn getThreadRng() std.Random {
-    if (g_RNG == null) {
-        g_RNG = rng.createRng(null) 
-            catch @panic("Could not get threadlocal RNG");
-    }
-    return g_RNG.?.random();
-}
 
 pub const Framebuffer = struct {
     const Self = @This();
@@ -206,7 +201,7 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
     const offset = 
         if (ctx.samples_per_pixel == 1) Vec3{0, 0, 0} 
-        else rng.sampleSquareXY(getThreadRng());
+        else rng.sampleSquareXY(rng.getThreadRng());
     const sample = ctx.pixel00_loc 
         + ctx.delta_u * Vec3{@as(Real, @floatFromInt(col_idx)) + offset[0], 0, 0}
         + ctx.delta_v * Vec3{0, @as(Real, @floatFromInt(ctx.row_idx)) + offset[1], 0};
@@ -237,12 +232,22 @@ fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize) Color {
 
     // Hit recursion to simulate ray bouncing.
     if (entity.hit(ctx, &record)) {
-        // Lambertian diffusion: spherical lobe biases reflection directions to be proportional to cos(theta), 
-        // theta = angle between surface normal and light direction (incoming ray!).
-        const bounce_direction = record.normal + rng.sampleUnitSphere(getThreadRng());
-        const origin = record.point;
-        const bounce_ray = Ray{ .origin = origin, .direction = bounce_direction };
-        return math.vec3s(0.5) * rayColor(entity, &bounce_ray, depth - 1);
+        var ray_scattered: Ray = undefined;
+        var attenuation_color: Color = undefined;
+        const ctx_scatter = ScatterContext{ 
+            .random = rng.getThreadRng(), 
+            .ray_incoming = ray, 
+            .hit_record = &record, 
+            .ray_scattered = &ray_scattered,
+            .attenuation = &attenuation_color, 
+        };
+
+        if (record.material) |material| {
+            if (material.scatter(ctx_scatter)) { 
+                return attenuation_color * rayColor(entity, &ray_scattered, depth - 1);
+            }
+        }
+        return Color{0, 0, 0};
     } 
 
     const dn = math.normalize(ray.direction);

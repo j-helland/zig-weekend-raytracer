@@ -16,24 +16,12 @@ const SphereEntity = ent.SphereEntity;
 const Ray = ent.Ray;
 const HitContext = ent.HitContext;
 const HitRecord = ent.HitRecord;
+const Material = ent.Material;
+const MetalMaterial = ent.MetalMaterial;
+const LambertianMaterial = ent.LambertianMaterial;
 
 const cam = @import("camera.zig");
 const Camera = cam.Camera;
-
-fn rayColor(ray: *const Ray, entity: *const Entity) Vec3 {
-    const ctx = HitContext{ 
-        .ray = ray, 
-        .trange = Interval(Real){ .min = 0.0, .max = std.math.inf(Real) },
-    };
-    var record = HitRecord{};
-    if (entity.hit(ctx, &record)) {
-        return vec3s(0.5) * (record.normal + vec3s(1.0));
-    }
-
-    const d = math.normalize(ray.direction);
-    const a = 0.5 * (d[1] + 1.0);
-    return math.lerp(Color{1, 1, 1}, Color{0.5, 0.7, 1.0}, a);
-}
 
 pub fn main() !void {    
     // ---- allocator ----
@@ -53,11 +41,19 @@ pub fn main() !void {
     const camera = Camera.init(&pool, img_width, img_height, focal_length);
     const stdout = std.io.getStdOut().writer();
 
+    // ---- materials ----
+    const mat_ground = Material{ .lambertian = LambertianMaterial{ .albedo = Color{0.8, 0.8, 0.0} } };
+    const mat_sphere_diffuse = Material{ .lambertian = LambertianMaterial{ .albedo = Color{0.1, 0.2, 0.5} } };
+    const mat_metal_left = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.8, 0.8} } };
+    const mat_metal_right = Material{ .metal = MetalMaterial{ .albedo = Color{0.8, 0.6, 0.2} } };
+
     // ---- scene initialization ----
     var scene = EntityCollection.init(allocator);
     defer scene.deinit();
-    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{0, 0, -1}, .radius = 0.5 } });
-    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{0, -100.5, -1}, .radius = 100.0 } });
+    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{0, 0, -1.2}, .radius = 0.5, .material = &mat_sphere_diffuse } });
+    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{0, -100.5, -1}, .radius = 100.0, .material = &mat_ground } });
+    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{-1, 0, -1}, .radius = 0.5, .material = &mat_metal_left } });
+    try scene.add(Entity{ .sphere = SphereEntity{ .center = Point3{1, 0, -1}, .radius = 0.5, .material = &mat_metal_right } });
     const world = Entity{ .collection = scene };
 
     // ---- render ----

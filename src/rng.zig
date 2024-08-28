@@ -4,7 +4,15 @@ const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Point3 = math.Vec3;
 
-pub fn createRng(rng_seed: ?u64) std.posix.GetRandomError!std.Random.DefaultPrng {
+threadlocal var g_RNG: ?std.Random.DefaultPrng = null;
+pub fn getThreadRng() std.Random {
+    if (g_RNG == null) {
+        g_RNG = createRng(null) 
+            catch @panic("Could not get threadlocal RNG");
+    }
+    return g_RNG.?.random();
+}
+fn createRng(rng_seed: ?u64) std.posix.GetRandomError!std.Random.DefaultPrng {
     return std.Random.DefaultPrng.init(
         if (rng_seed) |seed| 
             seed

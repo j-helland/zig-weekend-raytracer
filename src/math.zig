@@ -84,3 +84,24 @@ test "normalize" {
     const u = Vec3{1, 2, 3};
     try std.testing.expectApproxEqRel(1.0, length(normalize(u)), 1e-6);
 }
+
+pub inline fn reflect(v: Vec3, n: Vec3) Vec3 {
+    return v - vec3s(2.0 * dot(v, n)) * n;
+}
+
+pub inline fn isVec3NearZero(v: Vec3) bool {
+    return isNearZero(v[0]) and isNearZero(v[1]) and isNearZero(v[2]); 
+}
+
+pub inline fn isNearZero(x: Real) bool {
+    const tol = 1e-8;
+    return @abs(x) < tol;
+}
+
+test "isVec3NearZero" {
+    const v0 = Vec3{0, 0, 0};
+    try std.testing.expect(isVec3NearZero(v0));
+
+    const v1 = Vec3{0, 1, 0};
+    try std.testing.expect(!isVec3NearZero(v1));
+}
