@@ -53,7 +53,11 @@ pub const LambertianMaterial = struct {
         }
 
         const origin = ctx.hit_record.point;
-        ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
+        ctx.ray_scattered.* = Ray{ 
+            .origin = origin, 
+            .direction = scatter_direction, 
+            .time = ctx.ray_incoming.time,
+        };
         ctx.attenuation.* = self.albedo;
         return true;
     }
@@ -74,7 +78,11 @@ pub const MetalMaterial = struct {
         const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) 
             + blur * rng.sampleUnitSphere(ctx.random);
         const origin = ctx.hit_record.point;
-        ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
+        ctx.ray_scattered.* = Ray{ 
+            .origin = origin, 
+            .direction = scatter_direction, 
+            .time = ctx.ray_incoming.time,
+        };
         ctx.attenuation.* = self.albedo;
         return (math.dot(scatter_direction, ctx.hit_record.normal) > 0.0);
     }
@@ -107,7 +115,11 @@ pub const DielectricMaterial = struct {
                 math.refract(in_unit_direction, ctx.hit_record.normal, index);
 
         const origin = ctx.hit_record.point;
-        ctx.ray_scattered.* = Ray{ .origin = origin, .direction = scatter_direction };
+        ctx.ray_scattered.* = Ray{ 
+            .origin = origin, 
+            .direction = scatter_direction, 
+            .time = ctx.ray_incoming.time,
+        };
         return true;
     }
 
@@ -200,13 +212,28 @@ pub const SphereEntity = struct {
     radius: Real,
     material: *const Material,
 
+    b_is_moving: bool = false,
+    movement_direction: Vec3 = .{0, 0, 0},
+
     pub fn initEntity(center: Point3, radius: Real, material: *const Material) Entity {
         return Entity{ .sphere = Self{ .center = center, .radius = radius, .material = material } };
     }
 
+    pub fn initEntityAnimated(center_start: Point3, center_end: Point3, radius: Real, material: *const Material) Entity {
+        var entity = initEntity(center_start, radius, material);
+        entity.sphere.movement_direction = center_end - center_start;
+        entity.sphere.b_is_moving = true;
+        return entity;
+    }
+
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
+        // animation
+        const center = 
+            if (self.b_is_moving) self.move(ctx.ray.time) 
+            else self.center;
+
         // direction from ray to sphere center
-        const oc = self.center - ctx.ray.origin;
+        const oc = center - ctx.ray.origin;
         // Detect polynomial roots for ray / sphere intersection equation (cx-x)^2 + (cy-y)^2 + (cz-z)^2 = r^2 = (c - p(t)) . (c - p(t))
         const a = math.dot(ctx.ray.direction, ctx.ray.direction);
         const h = math.dot(ctx.ray.direction, oc);
@@ -226,11 +253,16 @@ pub const SphereEntity = struct {
 
         hit_record.t = root;
         hit_record.point = ctx.ray.at(hit_record.t);
-        const outward_normal = (hit_record.point - self.center) / vec3s(self.radius);
+        const outward_normal = (hit_record.point - center) / vec3s(self.radius);
         hit_record.setFrontFaceNormal(ctx.ray, outward_normal);
         hit_record.material = self.material;
 
         return true;
+    }
+
+    fn move(self: *const Self, time: Real) Point3 {
+        // lerp towards target; assume time is in [0,1]
+        return self.center + math.vec3s(time) * self.movement_direction;
     }
 };
 
@@ -239,6 +271,7 @@ pub const Ray = struct {
 
     origin: Point3,
     direction: Vec3,
+    time: Real = 0.0,
 
     pub fn at(self: *const Self, t: Real) Point3 {
         return self.origin + vec3s(t) * self.direction;

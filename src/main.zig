@@ -72,7 +72,13 @@ pub fn main() !void {
                     // diffuse
                     const albedo = rng.sampleVec3(rand);
                     try materials.append(LambertianMaterial.initMaterial(albedo));
-                    try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                    // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                    try scene.add(SphereEntity.initEntityAnimated(
+                        center, 
+                        center + Point3{0, rand.float(Real)*0.5, 0}, 
+                        0.2, 
+                        &materials.items[materials.items.len - 1],
+                    ));
                 } else if (choose_mat < 0.95) {
                     // metal
                     const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });

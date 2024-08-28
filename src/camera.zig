@@ -243,17 +243,27 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 
 /// Generates a random ray in a box around the current pixel (halfway to adjacent pixels).
 fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
+    const rand = rng.getThreadRng();
+
+    // Create a ray originating from the defocus disk and directed at a randomly sampled point around the pixel.
+    // - defocus disk sampling simulates depth of field
+    // - sampling randomly around the pixel performs multisample antialiasing
     const offset = 
         if (ctx.samples_per_pixel == 1) Vec3{0, 0, 0} 
-        else rng.sampleSquareXY(rng.getThreadRng());
+        else rng.sampleSquareXY(rand);
     const sample = ctx.pixel00_loc 
         + ctx.delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0])
         + ctx.delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
 
     const origin = if (ctx.defocus_angle <= 0.0) ctx.center else sampleDefocusDisk(ctx);
     const direction = sample - origin;
-    const ray = Ray{ .origin = origin, .direction = direction };
-    return ray;
+    const time = rand.float(Real);
+
+    return Ray{ 
+        .origin = origin, 
+        .direction = direction,
+        .time = time,
+    };
 }
 
 fn sampleDefocusDisk(ctx: *const RenderThreadContext) Vec3 {
