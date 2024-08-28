@@ -26,6 +26,14 @@ const rng = @import("rng.zig");
 const cam = @import("camera.zig");
 const Camera = cam.Camera;
 
+const WriterPPM = @import("writer.zig").WriterPPM;
+
+const Timer = @import("timer.zig").Timer;
+
+/// Global log level configuration.
+/// Will produce logs at this level in release mode.
+pub const log_level: std.log.Level = .info;
+
 pub fn main() !void {
     // ---- allocator ----
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -34,8 +42,10 @@ pub fn main() !void {
 
     // ---- thread pool ----
     var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = allocator });
+    try pool.init(.{ .allocator = allocator, .n_jobs = 32 });
     defer pool.deinit();
+
+    var timer = Timer.init();
 
     // ---- materials ----
     var scene = EntityCollection.init(allocator);
@@ -87,11 +97,10 @@ pub fn main() !void {
     const material3 = MetalMaterial.initMaterial(Color{0.7, 0.6, 0.5}, 0.0);
     try scene.add(SphereEntity.initEntity(Point3{4, 1, 0}, 1, &material3));
 
-    std.debug.print("MATERIALS: {any}\n", .{materials.items.len});
-    std.debug.print("SCENE: {any}\n", .{scene.entities.items.len});
+    timer.logInfoElapsed("scene setup");
 
     // camera
-    const img_width = 800;
+    const img_width = 1200;
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
     const look_from = Point3{13, 2, 3};
@@ -110,22 +119,29 @@ pub fn main() !void {
         focus_dist,
         defocus_angle,
     );
-    camera.samples_per_pixel = 300;
-    camera.max_ray_bounce_depth = 30;
+    camera.samples_per_pixel = 10;
+    camera.max_ray_bounce_depth = 20;
 
     // ---- render ----
     var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, img_width);
     defer framebuffer.deinit();
 
+    timer.logInfoElapsed("renderer initialized");
+
     std.log.debug("Rendering image...", .{});
     const world = Entity{ .collection = scene };
     try camera.render(&world, &framebuffer);
 
-    // ---- write ----
-    // TODO: create separate encoder struct
-    std.log.debug("Writing image...", .{});
-    const stdout = std.io.getStdOut().writer();
-    try framebuffer.write(allocator, &stdout);
+    timer.logInfoElapsed("scene rendered");
 
-    std.log.info("DONE", .{});
+    // ---- write ----
+    std.log.debug("Writing image...", .{});
+    const path = "hello.ppm";
+    var writer = WriterPPM{
+        .allocator = allocator,
+        .thread_pool = &pool,
+    };
+    try writer.write(path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
+
+    timer.logInfoElapsed("scene written to file");
 }

@@ -4,4 +4,5 @@ comptime {
     _ = @import("entity.zig");
     _ = @import("camera.zig");
     _ = @import("rng.zig");
+    _ = @import("writer.zig");
 }

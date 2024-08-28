@@ -19,6 +19,7 @@ const ScatterContext = ent.ScatterContext;
 
 const rng = @import("rng.zig");
 
+/// Render target abstraction that corresponds to a single frame.
 pub const Framebuffer = struct {
     const Self = @This();
 
@@ -42,27 +43,6 @@ pub const Framebuffer = struct {
 
     pub fn deinit(self: *const Self) void {
         self.allocator.free(self.buffer);
-    }
-
-    pub fn write(self: *const Self, allocator: std.mem.Allocator, writer: *const std.fs.File.Writer) !void {
-        // PPM header.
-        try writer.print(PPM_HEADER_FMT, .{self.num_cols, self.num_rows});        
-
-        // Write image to buffer and print to file all at once to minimize system calls.
-        // This speeds up image writing to near-instant.
-        var buf = try allocator.alloc(u8, self.buffer.len * PPM_PIXEL_NUM_BYTES);
-        defer allocator.free(buf);
-
-        var buf_idx: usize = 0;
-        for (0..self.num_rows) |v| {
-            for (0..self.num_cols) |u| {
-                const color = encodeColor(self.buffer[self.num_cols * v + u]);
-                const result = try std.fmt.bufPrint(buf[buf_idx..], "{d} {d} {d}\n", .{color[0], color[1], color[2]});
-                buf_idx += result.len;
-            }
-        }
-
-        try writer.writeAll(buf);
     }
 };
 
@@ -167,12 +147,10 @@ pub const Camera = struct {
     }
 
     pub fn render(self: *const Self, entity: *const Entity, framebuffer: *Framebuffer) !void {
-        // const framebuffer = try self.thread_pool.allocator.alloc(Color, self.image_height * self.image_width);
-        // defer self.thread_pool.allocator.free(framebuffer);
         var wg = std.Thread.WaitGroup{};
 
         // Similar to GPU 4x4 pixel shading work groups, except that here we use row-major order lines.
-        const block_size = 8;
+        const block_size = 32;
         std.debug.assert(self.image_width % block_size == 0);
 
         var render_thread_context = RenderThreadContext{
@@ -202,7 +180,8 @@ pub const Camera = struct {
 
             var idx_u: usize = 0;
             while (idx_u < self.image_width) : (idx_u += block_size) {
-                render_thread_context.col_range = .{ .min = idx_u, .max = idx_u + block_size };
+                // Handle uneven chunking.
+                render_thread_context.col_range = .{ .min = idx_u, .max = @min(self.image_width, idx_u + block_size) };
                 self.thread_pool.spawnWg(&wg, rayColorLine, .{ render_thread_context });
             }
         }
