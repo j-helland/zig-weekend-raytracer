@@ -59,36 +59,38 @@ pub fn main() !void {
     const material_ground = LambertianMaterial.initMaterial(Color{0.5, 0.5, 0.5});
     try scene.add(SphereEntity.initEntity(Point3{0, -1000, 0}, 1000, &material_ground));
 
-    const rand = rng.getThreadRng();
-    var a: Real = -11.0;
-    while (a < 11.0) : (a += 1.0) {
-        var b: Real = -11.0;
-        while (b < 11.0) : (b += 1.0) {
-            const choose_mat = rand.float(Real); 
-            const center = Point3{ a + 0.9*rand.float(Real), 0.2, b + 0.9*rand.float(Real) };
+    if (@import("builtin").mode != .Debug) {
+        const rand = rng.getThreadRng();
+        var a: Real = -11.0;
+        while (a < 11.0) : (a += 1.0) {
+            var b: Real = -11.0;
+            while (b < 11.0) : (b += 1.0) {
+                const choose_mat = rand.float(Real); 
+                const center = Point3{ a + 0.9*rand.float(Real), 0.2, b + 0.9*rand.float(Real) };
 
-            if (math.length(center - Point3{4, 0.2, 0}) > 0.9) {
-                if (choose_mat < 0.8) {
-                    // diffuse
-                    const albedo = rng.sampleVec3(rand);
-                    try materials.append(LambertianMaterial.initMaterial(albedo));
-                    // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
-                    try scene.add(SphereEntity.initEntityAnimated(
-                        center, 
-                        center + Point3{0, rand.float(Real)*0.5, 0}, 
-                        0.2, 
-                        &materials.items[materials.items.len - 1],
-                    ));
-                } else if (choose_mat < 0.95) {
-                    // metal
-                    const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
-                    const fuzz = rand.float(Real) * 0.8;
-                    try materials.append(MetalMaterial.initMaterial(albedo, fuzz));
-                    try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
-                } else {
-                    // glass
-                    try materials.append(DielectricMaterial.initMaterial(1.5));
-                    try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                if (math.length(center - Point3{4, 0.2, 0}) > 0.9) {
+                    if (choose_mat < 0.8) {
+                        // diffuse
+                        const albedo = rng.sampleVec3(rand);
+                        try materials.append(LambertianMaterial.initMaterial(albedo));
+                        // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        try scene.add(SphereEntity.initEntityAnimated(
+                            center, 
+                            center + Point3{0, rand.float(Real)*0.5, 0}, 
+                            0.2, 
+                            &materials.items[materials.items.len - 1],
+                        ));
+                    } else if (choose_mat < 0.95) {
+                        // metal
+                        const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
+                        const fuzz = rand.float(Real) * 0.8;
+                        try materials.append(MetalMaterial.initMaterial(albedo, fuzz));
+                        try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                    } else {
+                        // glass
+                        try materials.append(DielectricMaterial.initMaterial(1.5));
+                        try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                    }
                 }
             }
         }

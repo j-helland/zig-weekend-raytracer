@@ -92,6 +92,16 @@ pub const AABB = struct {
         };
     }
 
+    pub fn longestAxis(self: *const Self) Axis {
+        const lx = self.x.size();
+        const ly = self.y.size();
+        const lz = self.z.size();
+        if (lx > ly) {
+            return if (lx > lz) .x else .z;
+        }
+        return if (ly > lz) .y else .z;
+    }
+
     pub fn hit(self: *const Self, ray: *const Ray, ray_t: Interval(Real)) bool {
         // Check intersection against AABB slabs. 
         for (std.enums.values(Axis)) |axis| {

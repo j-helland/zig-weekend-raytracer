@@ -211,8 +211,6 @@ pub const BVHNodeEntity = struct {
     }
 
     pub fn init(allocator: std.mem.Allocator, entities: []*Entity, start: usize, end: usize) std.mem.Allocator.Error!Self {
-        const rand = rng.getThreadRng();
-
         var self: Self = undefined;
         self.allocator = allocator;        
 
@@ -226,7 +224,13 @@ pub const BVHNodeEntity = struct {
             self.right = entities[start + 1];
         } else {
             // node splitting
-            const axis = rng.sampleEnum(math.Axis, rand);
+            // choose axis aligned with longest bbox face
+            var bbox = AABB{};
+            for (entities[start..end]) |entity| {
+                bbox = bbox.unionWith(entity.boundingBox());
+            }
+            const axis = bbox.longestAxis();
+
             std.sort.pdq(*Entity, entities[start..end], BoxCmpContext{ .axis = axis }, boxCmp);
             const mid = start + span / 2;
 
