@@ -6,10 +6,10 @@ const Real = math.Real;
 const Vec3 = math.Vec3;
 const Color = math.Vec3;
 const Point3 = math.Vec3;
+const Ray = math.Ray;
 
 const ent = @import("entity.zig");
 const Entity = ent.Entity;
-const Ray = ent.Ray;
 const HitRecord = ent.HitRecord;
 const HitContext = ent.HitContext;
 const Material = ent.Material;

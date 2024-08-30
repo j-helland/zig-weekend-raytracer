@@ -8,6 +8,8 @@ const Point3 = Vec3;
 const Color = Vec3;
 const vec3s = math.vec3s;
 const Interval = math.Interval;
+const Ray = math.Ray;
+const AABB = math.AABB;
 
 const rng = @import("rng.zig");
 
@@ -158,12 +160,115 @@ pub const Entity = union(enum) {
 
     sphere: SphereEntity,
     collection: EntityCollection,
+    bvh_node: BVHNodeEntity,
+
+    pub fn deinit(self: *Self) void {
+        switch(self.*) {
+            .sphere => |*e| e.deinit(),
+            .collection => |*e| e.deinit(),
+            .bvh_node => |*e| e.deinit(),
+        }
+    }
 
     pub fn hit(self: Self, ctx: HitContext, hit_record: *HitRecord) bool {
         return switch (self) {
             .sphere => |e| e.hit(ctx, hit_record),
-            .collection => |e| e.hit(ctx, hit_record)
+            .collection => |e| e.hit(ctx, hit_record),
+            .bvh_node => |e| e.hit(ctx, hit_record),
         };
+    }
+
+    pub fn boundingBox(self: Self) AABB {
+        return switch(self) {
+            .sphere => |e| e.aabb,
+            .collection => |e| e.aabb,
+            .bvh_node => |e| e.aabb,
+        };
+    }
+}; 
+
+const BoxCmpContext = struct {
+    axis: math.Axis,
+};
+fn boxCmp(ctx: BoxCmpContext, a: *const Entity, b: *const Entity) bool {
+    const a_axis_interval = a.boundingBox().axisInterval(ctx.axis);
+    const b_axis_interval = b.boundingBox().axisInterval(ctx.axis);
+    return (a_axis_interval.min > b_axis_interval.min);
+}
+
+pub const BVHNodeEntity = struct {
+    const Self = @This();
+
+    const _mat = LambertianMaterial.initMaterial(Color{1, 0, 0});
+
+    allocator: std.mem.Allocator,
+    left: ?*Entity,
+    right: ?*Entity,
+    aabb: AABB,
+
+    pub fn initEntity(allocator: std.mem.Allocator, entities: []*Entity, start: usize, end: usize) std.mem.Allocator.Error!Entity {
+        return Entity{ .bvh_node = try Self.init(allocator, entities, start, end) };
+    }
+
+    pub fn init(allocator: std.mem.Allocator, entities: []*Entity, start: usize, end: usize) std.mem.Allocator.Error!Self {
+        const rand = rng.getThreadRng();
+
+        var self: Self = undefined;
+        self.allocator = allocator;        
+
+        // Populate left/right children.
+        const span = end - start;
+        if (span == 1) {
+            self.left = entities[start];
+            self.right = entities[start];
+        } else if (span == 2) {
+            self.left = entities[start];
+            self.right = entities[start + 1];
+        } else {
+            // node splitting
+            const axis = rng.sampleEnum(math.Axis, rand);
+            std.sort.pdq(*Entity, entities[start..end], BoxCmpContext{ .axis = axis }, boxCmp);
+            const mid = start + span / 2;
+
+            self.left = try allocator.create(Entity);
+            self.left.?.* = Entity{ .bvh_node = try Self.init(allocator, entities, start, mid) };
+
+            self.right = try allocator.create(Entity);
+            self.right.?.* = Entity{ .bvh_node = try Self.init(allocator, entities, mid, end) };
+        }
+
+        self.aabb = self.left.?.boundingBox().unionWith(self.right.?.boundingBox());
+
+        return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        if (self.left) |left| {
+            left.deinit();
+            if (left.* == .bvh_node) self.allocator.destroy(left);
+        }
+        if (self.right) |right| {
+            right.deinit();
+            if (right.* == .bvh_node) self.allocator.destroy(right);
+        }
+    }
+
+    pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
+        if (!self.aabb.hit(ctx.ray, ctx.trange)) {
+            return false;
+        }
+
+        const hit_left = 
+            if (self.left) |left| left.hit(ctx, hit_record) 
+            else false;
+        
+        var ctx_right = ctx;
+        if (hit_left) ctx_right.trange.max = hit_record.t;
+        const hit_right = 
+            if (self.right) |right| right.hit(ctx_right, hit_record)
+            else false;
+
+        return hit_left or hit_right;
     }
 };
 
@@ -171,17 +276,20 @@ pub const EntityCollection = struct {
     const Self = @This();
 
     entities: std.ArrayList(Entity),
+    aabb: AABB = .{},
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{ .entities = std.ArrayList(Entity).init(allocator) };
     }
 
     pub fn deinit(self: *Self) void {
+        for (self.entities.items) |*e| e.deinit();
         self.entities.deinit();
     }
 
     pub fn add(self: *Self, entity: Entity) AllocatorError!void {
         try self.entities.append(entity);
+        self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
 
     pub fn hit(self: *const Self, _ctx: HitContext, hit_record: *HitRecord) bool {
@@ -211,19 +319,38 @@ pub const SphereEntity = struct {
     center: Point3,
     radius: Real,
     material: *const Material,
+    aabb: AABB,
 
     b_is_moving: bool = false,
     movement_direction: Vec3 = .{0, 0, 0},
 
+    /// noop to satisfy interface
+    pub fn deinit(_: *const Self) void {}
+
     pub fn initEntity(center: Point3, radius: Real, material: *const Material) Entity {
-        return Entity{ .sphere = Self{ .center = center, .radius = radius, .material = material } };
+        const rvec = math.vec3s(radius);
+
+        return Entity{ .sphere = Self{ 
+            .center = center, 
+            .radius = radius, 
+            .material = material, 
+            .aabb = AABB.init(center - rvec, center + rvec),
+        }};
     }
 
     pub fn initEntityAnimated(center_start: Point3, center_end: Point3, radius: Real, material: *const Material) Entity {
-        var entity = initEntity(center_start, radius, material);
-        entity.sphere.movement_direction = center_end - center_start;
-        entity.sphere.b_is_moving = true;
-        return entity;
+        const rvec = math.vec3s(radius);
+
+        return Entity{ .sphere = Self{
+            .center = center_start,
+            .radius = radius,
+            .material = material,
+            .b_is_moving = true,
+            .movement_direction = center_end - center_start,
+            .aabb = AABB
+                .init(center_start - rvec, center_start + rvec)
+                .unionWith(AABB.init(center_end - rvec, center_end + rvec)),
+        }};
     }
 
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
@@ -263,17 +390,5 @@ pub const SphereEntity = struct {
     fn move(self: *const Self, time: Real) Point3 {
         // lerp towards target; assume time is in [0,1]
         return self.center + math.vec3s(time) * self.movement_direction;
-    }
-};
-
-pub const Ray = struct {
-    const Self = @This();
-
-    origin: Point3,
-    direction: Vec3,
-    time: Real = 0.0,
-
-    pub fn at(self: *const Self, t: Real) Point3 {
-        return self.origin + vec3s(t) * self.direction;
     }
 };

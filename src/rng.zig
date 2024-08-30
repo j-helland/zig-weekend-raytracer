@@ -25,6 +25,11 @@ fn createRng(rng_seed: ?u64) std.posix.GetRandomError!std.Random.DefaultPrng {
     );
 }
 
+pub fn sampleEnum(comptime E: type, rand: std.Random) E {
+    const vals = std.enums.values(E);
+    return vals[rand.intRangeAtMost(usize, 0, vals.len - 1)];
+}
+
 pub fn sampleVec3(rng: std.Random) Vec3 {
     return Vec3{ rng.float(f32), rng.float(f32), rng.float(f32) };
 }

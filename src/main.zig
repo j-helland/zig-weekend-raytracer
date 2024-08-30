@@ -8,12 +8,12 @@ const Point3 = Vec3;
 const Color = Vec3;
 const vec3s = math.vec3s;
 const Interval = math.Interval;
+const Ray = math.Ray;
 
 const ent = @import("entity.zig");
 const Entity = ent.Entity;
 const EntityCollection = ent.EntityCollection;
 const SphereEntity = ent.SphereEntity;
-const Ray = ent.Ray;
 const HitContext = ent.HitContext;
 const HitRecord = ent.HitRecord;
 const Material = ent.Material;
@@ -49,7 +49,7 @@ pub fn main() !void {
 
     // ---- materials ----
     var scene = EntityCollection.init(allocator);
-    defer scene.deinit();
+    // defer scene.deinit();
     try scene.entities.ensureTotalCapacity(22*22 + 3);
 
     var materials = std.ArrayList(Material).init(allocator);
@@ -103,6 +103,15 @@ pub fn main() !void {
     const material3 = MetalMaterial.initMaterial(Color{0.7, 0.6, 0.5}, 0.0);
     try scene.add(SphereEntity.initEntity(Point3{4, 1, 0}, 1, &material3));
 
+    var entity_refs = try std.ArrayList(*Entity).initCapacity(allocator, scene.entities.items.len);
+    defer entity_refs.deinit();
+    for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
+
+    var world = try ent.BVHNodeEntity.initEntity(allocator, entity_refs.items, 0, scene.entities.items.len);
+    defer scene.deinit();
+    // var world = Entity{ .collection = scene };
+    defer world.deinit();
+
     timer.logInfoElapsed("scene setup");
 
     // camera
@@ -131,13 +140,9 @@ pub fn main() !void {
     // ---- render ----
     var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, img_width);
     defer framebuffer.deinit();
-
     timer.logInfoElapsed("renderer initialized");
 
-    std.log.debug("Rendering image...", .{});
-    const world = Entity{ .collection = scene };
     try camera.render(&world, &framebuffer);
-
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -148,6 +153,5 @@ pub fn main() !void {
         .thread_pool = &pool,
     };
     try writer.write(path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
-
     timer.logInfoElapsed("scene written to file");
 }

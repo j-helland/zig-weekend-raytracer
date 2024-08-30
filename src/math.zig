@@ -8,12 +8,33 @@ pub const INTERVAL_UNIVERSE = Interval(Real){ .min = -std.math.inf(Real), .max =
 pub const GAMMA = 2.2;
 pub const INV_GAMMA = 1.0 / GAMMA;
 
+pub const Axis = enum(u2) { x, y, z };
+
+pub const Ray = struct {
+    const Self = @This();
+
+    origin: Vec3,
+    direction: Vec3,
+    time: Real = 0.0,
+
+    pub fn at(self: *const Self, t: Real) Vec3 {
+        return self.origin + vec3s(t) * self.direction;
+    }
+};
+
 pub fn Interval(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        min: T,
-        max: T,
+        min: T = 0,
+        max: T = 0,
+
+        pub fn unionWith(self: *const Self, other: Self) Self {
+            return Self{
+                .min = @min(self.min, other.min),
+                .max = @max(self.max, other.max),
+            };
+        }
 
         pub inline fn size(self: *const Self) T {
             return self.max - self.min;
@@ -32,8 +53,65 @@ pub fn Interval(comptime T: type) type {
         pub inline fn clamp(self: *const Self, t: T) T {
             return std.math.clamp(t, self.min, self.max);
         }
+
+        pub inline fn expand(self: *const Self, delta: Real) Self {
+            const padding = delta / 2;
+            return Self{ .min = self.min - padding, .max = self.max + padding };
+        }
     };
 }
+
+pub const AABB = struct {
+    const Self = @This();
+
+    x: Interval(Real) = .{},
+    y: Interval(Real) = .{},
+    z: Interval(Real) = .{},
+
+    pub fn init(a: Vec3, b: Vec3) Self {
+        return .{
+            .x = .{ .min = @min(a[0], b[0]), .max = @max(a[0], b[0]) },
+            .y = .{ .min = @min(a[1], b[1]), .max = @max(a[1], b[1]) },
+            .z = .{ .min = @min(a[2], b[2]), .max = @max(a[2], b[2]) },
+        };
+    }
+
+    pub fn unionWith(self: *const Self, other: Self) Self {
+        return Self{
+            .x = self.x.unionWith(other.x),
+            .y = self.y.unionWith(other.y),
+            .z = self.z.unionWith(other.z),
+        };
+    }
+
+    pub fn axisInterval(self: *const Self, axis: Axis) *const Interval(Real) {
+        return switch (axis) {
+            .x => &self.x,
+            .y => &self.y,
+            .z => &self.z,
+        };
+    }
+
+    pub fn hit(self: *const Self, ray: *const Ray, ray_t: Interval(Real)) bool {
+        // Check intersection against AABB slabs. 
+        for (std.enums.values(Axis)) |axis| {
+            const axis_idx = @as(u2, @intFromEnum(axis));
+            const interval = self.axisInterval(axis);
+            const axis_dir_inv = 1.0 / ray.direction[axis_idx];
+
+            var t0: Real = (interval.min - ray.origin[axis_idx]) * axis_dir_inv;
+            var t1: Real = (interval.max - ray.origin[axis_idx]) * axis_dir_inv;
+            if (t0 > t1) std.mem.swap(Real, &t0, &t1);
+
+            const tmin = @max(t0, ray_t.min);
+            const tmax = @min(t1, ray_t.max);
+
+            // No overlap in this axis necessarily means ray does not hit.
+            if (tmax <= tmin) return false;
+        }
+        return true;
+    }
+};
 
 pub inline fn gammaCorrection(v: Vec3) Vec3 {
     return Vec3{
@@ -51,12 +129,11 @@ pub inline fn lerp(x: Vec3, y: Vec3, alpha: Real) Vec3 {
     return x + vec3s(alpha) * (y - x);
 }
 
-const Vec3Component = enum { x, y, z };
 pub inline fn swizzle(
     v: Vec3,
-    comptime x: Vec3Component,
-    comptime y: Vec3Component,
-    comptime z: Vec3Component,
+    comptime x: Axis,
+    comptime y: Axis,
+    comptime z: Axis,
 ) Vec3 {
     return @shuffle(Real, v, undefined, [3]i32{ @intFromEnum(x), @intFromEnum(y), @intFromEnum(z) });
 }
