@@ -1,4 +1,6 @@
 const std = @import("std");
+ 
+const ztracy = @import("ztracy");
 
 pub const Real = f64;
 pub const Vec3 = @Vector(3, Real);
@@ -103,8 +105,11 @@ pub const AABB = struct {
     }
 
     pub fn hit(self: *const Self, ray: *const Ray, ray_t: Interval(Real)) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "AABB::hit");
+        defer tracy_zone.End();
+
         // Check intersection against AABB slabs. 
-        for (std.enums.values(Axis)) |axis| {
+        inline for (comptime std.enums.values(Axis)) |axis| {
             const axis_idx = @as(u2, @intFromEnum(axis));
             const interval = self.axisInterval(axis);
             const axis_dir_inv = 1.0 / ray.direction[axis_idx];

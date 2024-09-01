@@ -1,6 +1,8 @@
 const std = @import("std");
 const AllocatorError = std.mem.Allocator.Error;
 
+const ztracy = @import("ztracy");
+
 const math = @import("math.zig");
 const Real = math.Real;
 const Vec3 = math.Vec3;
@@ -41,15 +43,17 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // ---- thread pool ----
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = allocator, .n_jobs = 32 });
-    defer pool.deinit();
+    var thread_pool: std.Thread.Pool = undefined;
+    try thread_pool.init(.{ .allocator = allocator, .n_jobs = 16 });
+    defer thread_pool.deinit();
 
     var timer = Timer.init();
 
     // ---- materials ----
+    // Use scene.deinit() to manage lifetime of all entities. We'll keep these in a contiguous memory block. 
+    // Any acceleration structures will be built on top of this block and managed separately.
     var scene = EntityCollection.init(allocator);
-    // defer scene.deinit();
+    defer scene.deinit();
     try scene.entities.ensureTotalCapacity(22*22 + 3);
 
     var materials = std.ArrayList(Material).init(allocator);
@@ -60,6 +64,8 @@ pub fn main() !void {
     try scene.add(SphereEntity.initEntity(Point3{0, -1000, 0}, 1000, &material_ground));
 
     if (@import("builtin").mode != .Debug) {
+        // This many entities is way too slow in debug builds. 
+        // Also generates way too much profiling data.
         const rand = rng.getThreadRng();
         var a: Real = -11.0;
         while (a < 11.0) : (a += 1.0) {
@@ -73,7 +79,11 @@ pub fn main() !void {
                         // diffuse
                         const albedo = rng.sampleVec3(rand);
                         try materials.append(LambertianMaterial.initMaterial(albedo));
+
+                        // Non-motion blurred entities.
                         // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        
+                        // Motion blurred entities.
                         try scene.add(SphereEntity.initEntityAnimated(
                             center, 
                             center + Point3{0, rand.float(Real)*0.5, 0}, 
@@ -109,10 +119,13 @@ pub fn main() !void {
     defer entity_refs.deinit();
     for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
 
-    var world = try ent.BVHNodeEntity.initEntity(allocator, entity_refs.items, 0, scene.entities.items.len);
-    defer scene.deinit();
+    // Use the following for BVH-tree (accelerated) rendering.
+    var mem_pool = std.heap.MemoryPool(Entity).init(std.heap.page_allocator);
+    defer mem_pool.deinit();
+    var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
+    
+    // Use the following for non-BVH tree (slow) rendering
     // var world = Entity{ .collection = scene };
-    defer world.deinit();
 
     timer.logInfoElapsed("scene setup");
 
@@ -126,7 +139,7 @@ pub fn main() !void {
     const focus_dist = 10.0;
     const defocus_angle = 0.6;
     var camera = Camera.init(
-        &pool,
+        &thread_pool,
         aspect,
         img_width,
         fov_vertical,
@@ -152,7 +165,7 @@ pub fn main() !void {
     const path = "hello.ppm";
     var writer = WriterPPM{
         .allocator = allocator,
-        .thread_pool = &pool,
+        .thread_pool = &thread_pool,
     };
     try writer.write(path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
     timer.logInfoElapsed("scene written to file");

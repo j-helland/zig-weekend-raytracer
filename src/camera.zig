@@ -1,6 +1,8 @@
 const std = @import("std");
 const WriteError = std.fs.File.WriteError;
 
+const ztracy = @import("ztracy");
+
 const math = @import("math.zig");
 const Real = math.Real;
 const Vec3 = math.Vec3;
@@ -147,6 +149,9 @@ pub const Camera = struct {
     }
 
     pub fn render(self: *const Self, entity: *const Entity, framebuffer: *Framebuffer) !void {
+        const tracy_zone = ztracy.ZoneN(@src(), "Camera::render");
+        defer tracy_zone.End();
+        
         var wg = std.Thread.WaitGroup{};
 
         var render_thread_context = RenderThreadContext{
@@ -179,7 +184,7 @@ pub const Camera = struct {
 
             var idx_u: usize = 0;
             while (idx_u < self.image_width) : (idx_u += block_size) {
-                // Handle uneven chunking.
+                // // Handle uneven chunking.
                 render_thread_context.col_range = .{ .min = idx_u, .max = @min(self.image_width, idx_u + block_size) };
                 self.thread_pool.spawnWg(&wg, rayColorLine, .{ render_thread_context });
             }
@@ -229,6 +234,9 @@ fn encodeColor(_color: Color) [3]u8 {
 /// Raytraces a pixel line and writes the result into the framebuffer.
 /// Wrapper around rayColor function for use in multithreaded.
 fn rayColorLine(ctx: RenderThreadContext) void {
+    const tracy_zone = ztracy.ZoneN(@src(), "rayColorLine");
+    defer tracy_zone.End();
+
     const pixel_color_scale = math.vec3s(1.0 / @as(Real, @floatFromInt(ctx.samples_per_pixel)));
 
     for (ctx.col_range.min..ctx.col_range.max) |col_idx| {
@@ -243,6 +251,9 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 
 /// Generates a random ray in a box around the current pixel (halfway to adjacent pixels).
 fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
+    const tracy_zone = ztracy.ZoneN(@src(), "sampleRay");
+    defer tracy_zone.End();
+
     const rand = rng.getThreadRng();
 
     // Create a ray originating from the defocus disk and directed at a randomly sampled point around the pixel.
@@ -273,6 +284,9 @@ fn sampleDefocusDisk(ctx: *const RenderThreadContext) Vec3 {
 
 /// Computes the pixel color for the scene.
 fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize) Color {
+    const tracy_zone = ztracy.ZoneN(@src(), "rayColor");
+    defer tracy_zone.End();
+
     // Bounce recursion depth exceeded.
     if (depth == 0) return Color{0, 0, 0};
 

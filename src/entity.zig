@@ -1,6 +1,8 @@
 const std = @import("std");
 const AllocatorError = std.mem.Allocator.Error;
 
+const ztracy = @import("ztracy");
+
 const math = @import("math.zig");
 const Real = math.Real;
 const Vec3 = math.Vec3;
@@ -29,6 +31,9 @@ pub const Material = union(enum) {
     dielectric: DielectricMaterial,
 
     pub fn scatter(self: Self, ctx: ScatterContext) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "Material::scatter");
+        defer tracy_zone.End();
+
         return switch (self) {
             .lambertian => |m| m.scatter(ctx),
             .metal => |m| m.scatter(ctx),
@@ -47,6 +52,9 @@ pub const LambertianMaterial = struct {
     }
 
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "Lambertian::scatter");
+        defer tracy_zone.End();
+
         var scatter_direction = ctx.hit_record.normal + rng.sampleUnitSphere(ctx.random);
 
         // handle degenerate scattering direction
@@ -76,6 +84,9 @@ pub const MetalMaterial = struct {
     }
 
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "Metal::scatter");
+        defer tracy_zone.End();
+
         const blur = math.vec3s(std.math.clamp(self.fuzz, 0, 1));
         const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) 
             + blur * rng.sampleUnitSphere(ctx.random);
@@ -100,6 +111,9 @@ pub const DielectricMaterial = struct {
     }
 
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "Dielectric::scatter");
+        defer tracy_zone.End();
+
         const index = 
             if (ctx.hit_record.b_front_face) 1.0 / self.refraction_index 
             else self.refraction_index;
@@ -166,7 +180,8 @@ pub const Entity = union(enum) {
         switch(self.*) {
             .sphere => |*e| e.deinit(),
             .collection => |*e| e.deinit(),
-            .bvh_node => |*e| e.deinit(),
+            .bvh_node => {},
+            // .bvh_node => |*e| e.deinit(),
         }
     }
 
@@ -193,35 +208,32 @@ const BoxCmpContext = struct {
 fn boxCmp(ctx: BoxCmpContext, a: *const Entity, b: *const Entity) bool {
     const a_axis_interval = a.boundingBox().axisInterval(ctx.axis);
     const b_axis_interval = b.boundingBox().axisInterval(ctx.axis);
-    return (a_axis_interval.min > b_axis_interval.min);
+    return (a_axis_interval.min < b_axis_interval.min);
 }
 
+/// Caller is responsible for freeing the memory pool on which the BVH tree is allocated.
 pub const BVHNodeEntity = struct {
     const Self = @This();
 
     const _mat = LambertianMaterial.initMaterial(Color{1, 0, 0});
 
-    allocator: std.mem.Allocator,
     left: ?*Entity,
     right: ?*Entity,
-    aabb: AABB,
+    aabb: AABB, 
 
-    pub fn initEntity(allocator: std.mem.Allocator, entities: []*Entity, start: usize, end: usize) std.mem.Allocator.Error!Entity {
-        return Entity{ .bvh_node = try Self.init(allocator, entities, start, end) };
-    }
-
-    pub fn init(allocator: std.mem.Allocator, entities: []*Entity, start: usize, end: usize) std.mem.Allocator.Error!Self {
-        var self: Self = undefined;
-        self.allocator = allocator;        
+    pub fn init(allocator: *std.heap.MemoryPool(Entity), entities: []*Entity, start: usize, end: usize) !Self {
+        var self: BVHNodeEntity = undefined;
 
         // Populate left/right children.
         const span = end - start;
         if (span == 1) {
             self.left = entities[start];
             self.right = entities[start];
+
         } else if (span == 2) {
             self.left = entities[start];
             self.right = entities[start + 1];
+
         } else {
             // node splitting
             // choose axis aligned with longest bbox face
@@ -234,10 +246,10 @@ pub const BVHNodeEntity = struct {
             std.sort.pdq(*Entity, entities[start..end], BoxCmpContext{ .axis = axis }, boxCmp);
             const mid = start + span / 2;
 
-            self.left = try allocator.create(Entity);
+            self.left = try allocator.create();
             self.left.?.* = Entity{ .bvh_node = try Self.init(allocator, entities, start, mid) };
 
-            self.right = try allocator.create(Entity);
+            self.right = try allocator.create();
             self.right.?.* = Entity{ .bvh_node = try Self.init(allocator, entities, mid, end) };
         }
 
@@ -246,18 +258,14 @@ pub const BVHNodeEntity = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
-        if (self.left) |left| {
-            left.deinit();
-            if (left.* == .bvh_node) self.allocator.destroy(left);
-        }
-        if (self.right) |right| {
-            right.deinit();
-            if (right.* == .bvh_node) self.allocator.destroy(right);
-        }
+    pub fn initEntity(allocator: *std.heap.MemoryPool(Entity), entities: []*Entity, start: usize, end: usize) !Entity {
+        return Entity{ .bvh_node = try init(allocator, entities, start, end) };
     }
 
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "BVH::hit");
+        defer tracy_zone.End();
+
         if (!self.aabb.hit(ctx.ray, ctx.trange)) {
             return false;
         }
@@ -297,6 +305,9 @@ pub const EntityCollection = struct {
     }
 
     pub fn hit(self: *const Self, _ctx: HitContext, hit_record: *HitRecord) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "EntityCollection::hit");
+        defer tracy_zone.End();
+
         var ctx = _ctx;
         var hit_record_tmp  = HitRecord{};
         var b_hit_anything = false;
@@ -358,6 +369,9 @@ pub const SphereEntity = struct {
     }
 
     pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "Sphere::hit");
+        defer tracy_zone.End();
+
         // animation
         const center = 
             if (self.b_is_moving) self.move(ctx.ray.time) 

@@ -22,6 +22,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const is_tracy_enabled = (b.release_mode == .off);
+    const ztracy = b.dependency("ztracy", .{
+        .enable_ztracy = is_tracy_enabled,
+        .enable_fibers = is_tracy_enabled,
+    });
+    exe.root_module.addImport("ztracy", ztracy.module("root"));
+    exe.linkLibrary(ztracy.artifact("tracy"));
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
