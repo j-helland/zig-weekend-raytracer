@@ -304,6 +304,11 @@ pub const EntityCollection = struct {
         self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
 
+    pub fn addAssumeCapacity(self: *Self, entity: Entity) void {
+        self.entities.appendAssumeCapacity(entity);
+        self.aabb = self.aabb.unionWith(entity.boundingBox());
+    }
+
     pub fn hit(self: *const Self, _ctx: HitContext, hit_record: *HitRecord) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "EntityCollection::hit");
         defer tracy_zone.End();

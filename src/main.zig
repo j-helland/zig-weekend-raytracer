@@ -54,14 +54,14 @@ pub fn main() !void {
     // Any acceleration structures will be built on top of this block and managed separately.
     var scene = EntityCollection.init(allocator);
     defer scene.deinit();
-    try scene.entities.ensureTotalCapacity(22*22 + 3);
+    try scene.entities.ensureTotalCapacity(22*22 + 4);
 
     var materials = std.ArrayList(Material).init(allocator);
     defer materials.deinit();
     try materials.ensureTotalCapacity(22*22);
 
     const material_ground = LambertianMaterial.initMaterial(Color{0.5, 0.5, 0.5});
-    try scene.add(SphereEntity.initEntity(Point3{0, -1000, 0}, 1000, &material_ground));
+    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, -1000, 0}, 1000, &material_ground));
 
     if (@import("builtin").mode != .Debug) {
         // This many entities is way too slow in debug builds. 
@@ -84,22 +84,24 @@ pub fn main() !void {
                         // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
                         
                         // Motion blurred entities.
-                        try scene.add(SphereEntity.initEntityAnimated(
+                        scene.addAssumeCapacity(SphereEntity.initEntityAnimated(
                             center, 
                             center + Point3{0, rand.float(Real)*0.5, 0}, 
                             0.2, 
                             &materials.items[materials.items.len - 1],
                         ));
+
                     } else if (choose_mat < 0.95) {
                         // metal
                         const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
                         const fuzz = rand.float(Real) * 0.8;
-                        try materials.append(MetalMaterial.initMaterial(albedo, fuzz));
-                        try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        materials.appendAssumeCapacity(MetalMaterial.initMaterial(albedo, fuzz));
+                        scene.addAssumeCapacity(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+
                     } else {
                         // glass
-                        try materials.append(DielectricMaterial.initMaterial(1.5));
-                        try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        try materials.appendAssumeCapacity(DielectricMaterial.initMaterial(1.5));
+                        scene.addAssumeCapacity(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
                     }
                 }
             }
@@ -107,13 +109,13 @@ pub fn main() !void {
     }
 
     const material1 = DielectricMaterial.initMaterial(1.5);
-    try scene.add(SphereEntity.initEntity(Point3{0, 1, 0}, 1.0, &material1));
+    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, 1, 0}, 1.0, &material1));
 
     const material2 = LambertianMaterial.initMaterial(Color{0.4, 0.2, 0.1});
-    try scene.add(SphereEntity.initEntity(Point3{-4, 1, 0}, 1, &material2));
+    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{-4, 1, 0}, 1, &material2));
 
     const material3 = MetalMaterial.initMaterial(Color{0.7, 0.6, 0.5}, 0.0);
-    try scene.add(SphereEntity.initEntity(Point3{4, 1, 0}, 1, &material3));
+    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{4, 1, 0}, 1, &material3));
 
     var entity_refs = try std.ArrayList(*Entity).initCapacity(allocator, scene.entities.items.len);
     defer entity_refs.deinit();
@@ -124,7 +126,7 @@ pub fn main() !void {
     defer mem_pool.deinit();
     var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
     
-    // Use the following for non-BVH tree (slow) rendering
+    // // Use the following for non-BVH tree (slow) rendering
     // var world = Entity{ .collection = scene };
 
     timer.logInfoElapsed("scene setup");

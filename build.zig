@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const is_tracy_enabled = (b.release_mode == .off);
+    const is_tracy_enabled = b.option(bool, "tracy-enabled", "Enable tracy profiling") orelse false;
     const ztracy = b.dependency("ztracy", .{
         .enable_ztracy = is_tracy_enabled,
         .enable_fibers = is_tracy_enabled,

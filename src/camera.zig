@@ -184,7 +184,7 @@ pub const Camera = struct {
 
             var idx_u: usize = 0;
             while (idx_u < self.image_width) : (idx_u += block_size) {
-                // // Handle uneven chunking.
+                // Handle uneven chunking.
                 render_thread_context.col_range = .{ .min = idx_u, .max = @min(self.image_width, idx_u + block_size) };
                 self.thread_pool.spawnWg(&wg, rayColorLine, .{ render_thread_context });
             }
@@ -266,7 +266,9 @@ fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
         + ctx.delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0])
         + ctx.delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
 
-    const origin = if (ctx.defocus_angle <= 0.0) ctx.center else sampleDefocusDisk(ctx);
+    const origin = 
+        if (ctx.defocus_angle <= 0.0) ctx.center 
+        else sampleDefocusDisk(ctx);
     const direction = sample - origin;
     const time = rand.float(Real);
 
