@@ -32,37 +32,11 @@ const WriterPPM = @import("writer.zig").WriterPPM;
 
 const Timer = @import("timer.zig").Timer;
 
+const ArgParser = @import("argparser.zig").ArgParser;
+
 /// Global log level configuration.
 /// Will produce logs at this level in release mode.
 pub const log_level: std.log.Level = .info;
-
-const UserArgs = struct {
-    const ParseArgsError = error{
-        ParseIntFailed,
-    };
-
-    image_width: usize = 800,
-
-    pub fn parse(allocator: std.mem.Allocator) ParseArgsError!UserArgs {
-        var result = UserArgs{};
-
-        var args_iterator = try std.process.ArgIterator.initWithAllocator(allocator);
-        defer args_iterator.deinit();
-        // skip executable
-        _ = args_iterator.next();
-
-        // image width
-        if (args_iterator.next()) |arg| {
-            result.image_width = std.fmt.parseInt(usize, arg, 10)
-                catch return ParseArgsError.ParseIntFailed;
-        }
-
-        if (args_iterator.next()) |arg| {
-            std.log.warn("Ignoring extra args starting at {s}", .{arg});
-        }
-        return result;
-    }
-};
 
 pub fn main() !void {
     // ---- allocator ----
@@ -71,7 +45,9 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // parse args
-    const args = try UserArgs.parse(allocator);
+    var parser = try ArgParser.init(allocator);
+    defer parser.deinit();
+    const args = try parser.parse();
 
     // ---- thread pool ----
     var thread_pool: std.Thread.Pool = undefined;
@@ -109,7 +85,7 @@ pub fn main() !void {
                     if (choose_mat < 0.8) {
                         // diffuse
                         const albedo = rng.sampleVec3(rand);
-                        try materials.append(LambertianMaterial.initMaterial(albedo));
+                        materials.appendAssumeCapacity(LambertianMaterial.initMaterial(albedo));
 
                         // Non-motion blurred entities.
                         // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
@@ -131,7 +107,7 @@ pub fn main() !void {
 
                     } else {
                         // glass
-                        try materials.appendAssumeCapacity(DielectricMaterial.initMaterial(1.5));
+                        materials.appendAssumeCapacity(DielectricMaterial.initMaterial(1.5));
                         scene.addAssumeCapacity(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
                     }
                 }
@@ -194,11 +170,10 @@ pub fn main() !void {
 
     // ---- write ----
     std.log.debug("Writing image...", .{});
-    const path = "hello.ppm";
     var writer = WriterPPM{
         .allocator = allocator,
         .thread_pool = &thread_pool,
     };
-    try writer.write(path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
+    try writer.write(args.image_out_path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
     timer.logInfoElapsed("scene written to file");
 }
