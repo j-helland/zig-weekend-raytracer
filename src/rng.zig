@@ -5,6 +5,8 @@ const Vec3 = math.Vec3;
 const Point3 = math.Vec3;
 
 threadlocal var g_RNG: ?std.Random.DefaultPrng = null;
+
+/// Thread-safe retrieval of random number generator. Works by implicitly creating a threadlocal singleton RNG. 
 pub fn getThreadRng() std.Random {
     if (g_RNG == null) {
         g_RNG = createRng(null) 
@@ -25,27 +27,32 @@ fn createRng(rng_seed: ?u64) std.posix.GetRandomError!std.Random.DefaultPrng {
     );
 }
 
+/// Sample a random enum value from the type.
 pub fn sampleEnum(comptime E: type, rand: std.Random) E {
-    const vals = std.enums.values(E);
+    const vals = comptime std.enums.values(E);
     return vals[rand.intRangeAtMost(usize, 0, vals.len - 1)];
 }
 
 pub fn sampleVec3(rng: std.Random) Vec3 {
-    return Vec3{ rng.float(f32), rng.float(f32), rng.float(f32) };
+    return Vec3{ 
+        rng.float(math.Real), 
+        rng.float(math.Real), 
+        rng.float(math.Real),
+    };
 }
 
-pub fn sampleVec3Interval(rng: std.Random, int: math.Interval(f32)) Vec3 {
+pub fn sampleVec3Interval(rng: std.Random, int: math.Interval(math.Real)) Vec3 {
     return Vec3{
-        rng.float(f32) * int.size() + int.min,
-        rng.float(f32) * int.size() + int.min,
-        rng.float(f32) * int.size() + int.min,
+        rng.float(math.Real) * int.size() + int.min,
+        rng.float(math.Real) * int.size() + int.min,
+        rng.float(math.Real) * int.size() + int.min,
     };
 }
 
 test "sampleVec3Interval" {
     var rng = try createRng(@intCast(std.testing.random_seed));
     for (0..128) |_| {
-        const int = math.Interval(f32){ .min = 1.5, .max = 2.25 };
+        const int = math.Interval(math.Real){ .min = 1.5, .max = 2.25 };
         const v = sampleVec3Interval(rng.random(), int);
         try std.testing.expect(int.min <= v[0] and v[0] <= int.max);
         try std.testing.expect(int.min <= v[1] and v[1] <= int.max);
@@ -56,8 +63,8 @@ test "sampleVec3Interval" {
 /// Returns random point in the set [-0.5, 0.5] x [-0.5, 0.5].
 pub fn sampleSquareXY(rng: std.Random) Point3 {
     return Vec3{
-        rng.float(f32) - 0.5,
-        rng.float(f32) - 0.5,
+        rng.float(math.Real) - 0.5,
+        rng.float(math.Real) - 0.5,
         0.0,
     };
 }
@@ -71,30 +78,25 @@ pub fn sampleUnitDiskXY(rng: std.Random, radius: math.Real) Point3 {
     return math.vec3s(radius * rng.float(math.Real)) * sampleUnitCircleXY(rng);
 }
 
-/// Returns random point in unit ball.
+/// Returns random point in unit ball. Direct sampling i.e. no rejection sampling.
 pub fn sampleUnitBall(rng: std.Random) Point3 {
-    const radius = math.vec3s(rng.float(f32));
+    const radius = math.vec3s(rng.float(math.Real));
     return radius * sampleUnitSphere(rng);
 }
 
-/// Returns random point on surface of unit sphere.
+/// Returns random point on surface of unit sphere. Direct sampling i.e. no rejection sampling.
 pub fn sampleUnitSphere(rng: std.Random) Point3 {
-    const p = Point3{ rng.floatNorm(f32), rng.floatNorm(f32), rng.floatNorm(f32) };
+    // Sample gaussian vector ~ N(0,I) and project it onto the sphere.
+    const p = Point3{ 
+        rng.floatNorm(math.Real), 
+        rng.floatNorm(math.Real), 
+        rng.floatNorm(math.Real), 
+    };
     return math.normalize(p);
 }
 
+// Samples a point within a unit hemisphere defined via a normal vector. Direct sampling i.e. no rejection sampling.
 pub fn sampleUnitHemisphere(rng: std.Random, normal: Vec3) Vec3 {
     const v = sampleUnitSphere(rng);
-    return 
-        if (math.dot(normal, v) > 0.0) v
-        else Vec3{ -v[0], -v[1], -v[2] };
+    return if (math.dot(normal, v) > 0.0) v else -v;
 }
-
-// pub fn sampleUnitHemisphere(rng: std.Random, normal: Vec3) Vec3 {
-//     var v = sampleVec3Interval(rng, .{ .min = -1, .max = 1 });
-//     while (math.dot(v, v) > 1.0) : (v = sampleVec3Interval(rng, .{ .min = -1, .max = 1 })) {}
-//     v = math.normalize(v);
-//     return 
-//         if (math.dot(normal, v) > 0.0) v
-//         else Vec3{ -v[0], -v[1], -v[2] };
-// }
