@@ -36,11 +36,42 @@ const Timer = @import("timer.zig").Timer;
 /// Will produce logs at this level in release mode.
 pub const log_level: std.log.Level = .info;
 
+const UserArgs = struct {
+    const ParseArgsError = error{
+        ParseIntFailed,
+    };
+
+    image_width: usize = 800,
+
+    pub fn parse(allocator: std.mem.Allocator) ParseArgsError!UserArgs {
+        var result = UserArgs{};
+
+        var args_iterator = try std.process.ArgIterator.initWithAllocator(allocator);
+        defer args_iterator.deinit();
+        // skip executable
+        _ = args_iterator.next();
+
+        // image width
+        if (args_iterator.next()) |arg| {
+            result.image_width = std.fmt.parseInt(usize, arg, 10)
+                catch return ParseArgsError.ParseIntFailed;
+        }
+
+        if (args_iterator.next()) |arg| {
+            std.log.warn("Ignoring extra args starting at {s}", .{arg});
+        }
+        return result;
+    }
+};
+
 pub fn main() !void {
     // ---- allocator ----
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    // parse args
+    const args = try UserArgs.parse(allocator);
 
     // ---- thread pool ----
     var thread_pool: std.Thread.Pool = undefined;
@@ -132,7 +163,6 @@ pub fn main() !void {
     timer.logInfoElapsed("scene setup");
 
     // camera
-    const img_width = 1200;
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
     const look_from = Point3{13, 2, 3};
@@ -143,7 +173,7 @@ pub fn main() !void {
     var camera = Camera.init(
         &thread_pool,
         aspect,
-        img_width,
+        args.image_width,
         fov_vertical,
         look_from,
         look_at,
@@ -155,7 +185,7 @@ pub fn main() !void {
     camera.max_ray_bounce_depth = 20;
 
     // ---- render ----
-    var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, img_width);
+    var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, args.image_width);
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
