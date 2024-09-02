@@ -4,6 +4,7 @@ const ztracy = @import("ztracy");
 
 pub const Real = f64;
 pub const Vec3 = @Vector(3, Real);
+pub const Vec2 = @Vector(2, Real);
 
 pub const INTERVAL_EMPTY = Interval(Real){ .min = std.math.inf(Real), .max = -std.math.inf(Real) };
 pub const INTERVAL_UNIVERSE = Interval(Real){ .min = -std.math.inf(Real), .max = std.math.inf(Real) };

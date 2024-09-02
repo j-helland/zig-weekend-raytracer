@@ -6,12 +6,16 @@ const ztracy = @import("ztracy");
 const math = @import("math.zig");
 const Real = math.Real;
 const Vec3 = math.Vec3;
+const Vec2 = math.Vec2;
 const Point3 = Vec3;
 const Color = Vec3;
 const vec3s = math.vec3s;
 const Interval = math.Interval;
 const Ray = math.Ray;
 const AABB = math.AABB;
+
+const tex = @import("texture.zig");
+const Texture = tex.Texture;
 
 const rng = @import("rng.zig");
 
@@ -45,10 +49,10 @@ pub const Material = union(enum) {
 pub const LambertianMaterial = struct {
     const Self = @This();
 
-    albedo: Color,
+    texture: *const Texture,
 
-    pub fn initMaterial(albedo: Color) Material {
-        return Material{ .lambertian = Self{ .albedo = albedo } };
+    pub fn initMaterial(texture: *const Texture) Material {
+        return Material{ .lambertian = Self{ .texture = texture } };
     }
 
     pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
@@ -68,7 +72,7 @@ pub const LambertianMaterial = struct {
             .direction = scatter_direction, 
             .time = ctx.ray_incoming.time,
         };
-        ctx.attenuation.* = self.albedo;
+        ctx.attenuation.* = self.texture.value(ctx.hit_record.tex_uv, &origin);
         return true;
     }
 };
@@ -154,6 +158,7 @@ pub const HitRecord = struct {
     normal: Vec3 = .{0, 0, 0},
     material: ?*const Material = null,
     t: Real = std.math.inf(Real),
+    tex_uv: Vec2 = .{0, 0},
     b_front_face: bool = false,
 
     pub fn setFrontFaceNormal(self: *Self, ray: *const Ray, outward_normal: Vec3) void {
