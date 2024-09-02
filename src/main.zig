@@ -38,6 +38,11 @@ const ArgParser = @import("argparser.zig").ArgParser;
 /// Will produce logs at this level in release mode.
 pub const log_level: std.log.Level = .info;
 
+const UserArgs = struct {
+    image_width: usize = 800,
+    image_out_path: []const u8 = "image.ppm",
+};
+
 pub fn main() !void {
     // ---- allocator ----
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -45,9 +50,12 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // parse args
-    var parser = try ArgParser.init(allocator);
+    var parser = try ArgParser(UserArgs).init(allocator);
     defer parser.deinit();
-    const args = try parser.parse();
+    const args = parser.parse() catch {
+        try parser.printUsage(std.io.getStdOut().writer());
+        return error.CouldNotParseUserArgs;
+    };
 
     // ---- thread pool ----
     var thread_pool: std.Thread.Pool = undefined;
