@@ -9,17 +9,25 @@ pub fn ArgParser(comptime T: type) type {
             ParseIntFailed,
             ParseTypeParseMethodMissing,
             InvalidArgument,
+            UnrecognizedArgument,
         };
 
         args_iter: std.process.ArgIterator,
-        keyvals: std.StringHashMap([]const u8),
+        keyvals: std.StringHashMap(?[]const u8),
         args: T = .{},
 
-        pub fn init(allocator: std.mem.Allocator) std.process.ArgIterator.InitError!Self {
-            return Self{ 
+        pub fn init(allocator: std.mem.Allocator) !Self {
+            var self = Self{ 
                 .args_iter = try std.process.ArgIterator.initWithAllocator(allocator), 
-                .keyvals = std.StringHashMap([]const u8).init(allocator),
+                .keyvals = std.StringHashMap(?[]const u8).init(allocator),
             };
+
+            // preload so we can detect unknown user args
+            inline for (@typeInfo(T).Struct.fields) |field| {
+                try self.keyvals.put(field.name, null);
+            }
+
+            return self;
         }
 
         pub fn deinit(self: *Self) void {
@@ -31,13 +39,14 @@ pub fn ArgParser(comptime T: type) type {
             // skip executable
             _ = self.args_iter.next();
 
-            // Load key/val splits.
+            // Load key/val splits.            
             while (self.args_iter.next()) |argval| {
                 try self.cacheArgVal(argval);
             }
 
             inline for (@typeInfo(T).Struct.fields) |field| {
-                if (self.keyvals.get(field.name)) |val| {
+                // cache was prefilled with fields
+                if (self.keyvals.get(field.name).?) |val| {
                     @field(self.args, field.name) = switch (field.type) {
                         []const u8 => val,
 
@@ -92,7 +101,8 @@ pub fn ArgParser(comptime T: type) type {
             const key = split.next() orelse return ParseArgsError.InvalidArgument;
             const val = split.next() orelse return ParseArgsError.InvalidArgument;
 
-            try self.keyvals.put(key, val);
+            if (!self.keyvals.contains(key)) return ParseArgsError.UnrecognizedArgument;
+            self.keyvals.putAssumeCapacity(key, val);
         }
     };
 }
