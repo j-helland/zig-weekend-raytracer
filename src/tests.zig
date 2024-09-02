@@ -6,4 +6,5 @@ comptime {
     _ = @import("rng.zig");
     _ = @import("writer.zig");
     _ = @import("mmap.zig");
+    _ = @import("argparser.zig");
 }

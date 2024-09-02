@@ -308,8 +308,12 @@ pub fn main() !void {
     // parse args
     var parser = try ArgParser(UserArgs).init(allocator);
     defer parser.deinit();
-    const args = parser.parse() catch {
-        try parser.printUsage(std.io.getStdOut().writer());
+
+    const argvals = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, argvals);
+
+    const args = parser.parse(argvals) catch {
+        try parser.printUsage(std.io.getStdErr().writer());
         return error.CouldNotParseUserArgs;
     };
 
