@@ -4,7 +4,9 @@
     // This field is optional. Doesn't do anything as of current compiler version.
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
+        .system_sdk = .{ .path = "libs/system-sdk" },
         .ztracy = .{ .path = "libs/ztracy" },
+        .zstbi = .{ .path = "libs/zstbi" },
     },
     // Stuff included in checksum.
     .paths = .{

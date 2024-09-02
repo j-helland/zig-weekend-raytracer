@@ -21,7 +21,7 @@ fn createRng(rng_seed: ?u64) std.posix.GetRandomError!std.Random.DefaultPrng {
         else blk: {
             var seed: u64 = 0;
             try std.posix.getrandom(std.mem.asBytes(&seed));
-            std.log.debug("\t\tSimulation RNG seed: {d}", .{seed});
+            std.log.debug("[thread {d}]\t\tSimulation RNG seed: {d}", .{std.Thread.getCurrentId(), seed});
             break :blk seed;
         }
     );

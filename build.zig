@@ -1,74 +1,109 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
-pub fn build(b: *std.Build) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
-    const target = b.standardTargetOptions(.{});
+const ASSET_DIR = "assets/";
 
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
-    const optimize = b.standardOptimizeOption(.{});
+const Options = struct {
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+
+    enable_tracy: bool = false,
+};
+
+/// construct build graph
+pub fn build(b: *std.Build) void {
+    const opts = addOptions(b);
 
     const exe = b.addExecutable(.{
         .name = "weekend-raytracer",
         .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const is_tracy_enabled = b.option(bool, "tracy-enabled", "Enable tracy profiling") orelse false;
-    const ztracy = b.dependency("ztracy", .{
-        .enable_ztracy = is_tracy_enabled,
-        .enable_fibers = is_tracy_enabled,
-    });
-    exe.root_module.addImport("ztracy", ztracy.module("root"));
-    exe.linkLibrary(ztracy.artifact("tracy"));
+        .target = opts.target,
+        .optimize = opts.optimize,
+    });    
+    addDependencies(b, opts, exe);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
     b.installArtifact(exe);
 
-    // This *creates* a Run step in the build graph, to be executed when another
-    // step is evaluated that depends on it. The next line below will establish
-    // such a dependency.
+    // run step in build graph. 
     const run_cmd = b.addRunArtifact(exe);
-
-    // By making the run step depend on the install step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    // This is not necessary, however, if the application depends on other installed
-    // files, this ensures they will be present and in the expected location.
+    // run from installation directory
     run_cmd.step.dependOn(b.getInstallStep());
-
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
+    // allow user args "zig build run -- arg1 arg2..."
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
 
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
+    // expose "zig build run" to run run_cmd instead of default install step
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    addTests(b, opts);    
+}
+
+fn addOptions(b: *std.Build) Options {
+    return Options{
+        // User specified target.
+        .target = b.standardTargetOptions(.{}),
+        // User specified release mode.
+        .optimize = b.standardOptimizeOption(.{}),
+
+        // custom build flags
+        .enable_tracy = b.option(bool, "enable-tracy", "Enable tracy profiling") 
+            orelse false,
+    };
+}
+
+fn addDependencies(b: *std.Build, opts: Options, exe: *std.Build.Step.Compile) void {
+    // ---- 3P libs ----
+    @import("system_sdk").addLibraryPathsTo(exe);
+
+    // stbi_image
+    {
+        const zstbi = b.dependency("zstbi", .{});
+        exe.root_module.addImport("zstbi", zstbi.module("root"));
+        exe.linkLibrary(zstbi.artifact("zstbi"));
+    }
+
+    // tracy profiler
+    {
+        const ztracy = b.dependency("ztracy", .{
+            .enable_ztracy = opts.enable_tracy,
+            .enable_fibers = opts.enable_tracy,
+        });
+        exe.root_module.addImport("ztracy", ztracy.module("root"));
+        exe.linkLibrary(ztracy.artifact("tracy"));
+    }
+
+    // ---- assets ----
+    {
+        const exe_options = b.addOptions();
+        exe.root_module.addOptions("build_options", exe_options);
+
+        exe_options.addOption([]const u8, "asset_dir", ASSET_DIR);
+        const asset_path = b.pathJoin(&.{ASSET_DIR});
+        const install_assets_step = b.addInstallDirectory(.{
+            .source_dir = b.path(asset_path),
+            .install_dir = .bin,
+            .install_subdir = ASSET_DIR,
+        });
+        exe.step.dependOn(&install_assets_step.step);
+    }
+}
+
+fn addTests(b: *std.Build, opts: Options) void {
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/tests.zig"),
-        .target = target,
-        .optimize = optimize,
+        .target = opts.target,
+        .optimize = opts.optimize,
     });
+
+    addDependencies(b, opts, exe_unit_tests);
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
-    // Similar to creating the run step earlier, this exposes a `test` step to
-    // the `zig build --help` menu, providing a way for the user to request
-    // running the unit tests.
+    // expose "zig build test" to run test suite.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 }

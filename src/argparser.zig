@@ -87,9 +87,7 @@ pub fn ArgParser(comptime T: type) type {
             var start_idx: usize = 0;
             while (start_idx < argval.len and argval[start_idx] == '-') 
                 : (start_idx += 1) {}
-            // if (start_idx >= argval.len) return ParseArgsError.InvalidArgument;
 
-            std.debug.print("{s}\n", .{argval});
             var split = std.mem.splitSequence(u8, argval[start_idx..], "=");
             const key = split.next() orelse return ParseArgsError.InvalidArgument;
             const val = split.next() orelse return ParseArgsError.InvalidArgument;

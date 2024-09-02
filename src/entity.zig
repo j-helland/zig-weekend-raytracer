@@ -410,6 +410,7 @@ pub const SphereEntity = struct {
         hit_record.point = ctx.ray.at(hit_record.t);
         const outward_normal = (hit_record.point - center) / vec3s(self.radius);
         hit_record.setFrontFaceNormal(ctx.ray, outward_normal);
+        hit_record.tex_uv = getSphereUv(&outward_normal);
         hit_record.material = self.material;
 
         return true;
@@ -418,5 +419,15 @@ pub const SphereEntity = struct {
     fn move(self: *const Self, time: Real) Point3 {
         // lerp towards target; assume time is in [0,1]
         return self.center + math.vec3s(time) * self.movement_direction;
+    }
+
+    /// Returns UV coordinates for the sphere.
+    fn getSphereUv(v: *const Vec3) Vec2 {
+        const theta = std.math.acos(-v[1]);
+        const phi = std.math.atan2(-v[2], v[0]) + std.math.pi;
+        return Vec2{
+            phi / (2*std.math.pi),
+            theta / std.math.pi,
+        };
     }
 };
