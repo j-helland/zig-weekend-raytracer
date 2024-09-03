@@ -8,9 +8,11 @@ const Ray            = @import("ray.zig").Ray;
 const HitRecord      = @import("ray.zig").HitRecord;
 const ScatterContext = @import("ray.zig").ScatterContext;
 
-const math  = @import("math.zig");
-const Real  = math.Real;
-const Color = math.Vec3;
+const math   = @import("math.zig");
+const Real   = math.Real;
+const Vec2   = math.Vec2;
+const Point3 = math.Vec3;
+const Color  = math.Vec3;
 
 const rng = @import("rng.zig");
 
@@ -21,14 +23,53 @@ pub const Material = union(enum) {
     lambertian: LambertianMaterial,
     metal: MetalMaterial,
     dielectric: DielectricMaterial,
+    diffuse_emissive: DiffuseLightEmissiveMaterial,
 
-    pub fn scatter(self: Self, ctx: ScatterContext) bool {
+    pub fn emitted(self: *const Self, uv: Vec2, point: *const Point3) Color {
+        const tracy_zone = ztracy.ZoneN(@src(), "Material::emitted");
+        defer tracy_zone.End();
+
+        return switch (self.*) {
+            inline else => |*m| 
+                if (std.meta.hasMethod(@TypeOf(m.*), "emitted")) 
+                    m.emitted(uv, point)
+                else
+                    // Default no light emitted.
+                    Color{0, 0, 0},
+        };
+    }
+
+    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "Material::scatter");
         defer tracy_zone.End();
 
-        return switch (self) {
-            inline else => |m| m.scatter(ctx),
+        return switch (self.*) {
+            inline else => |*m| m.scatter(ctx),
         };
+    }
+};
+
+pub const DiffuseLightEmissiveMaterial = struct {
+    const Self = @This();
+
+    texture: *const Texture,
+
+    pub fn initMaterial(texture: *const Texture) Material {
+        return Material{ .diffuse_emissive = Self{ .texture = texture } };
+    }
+
+    pub fn emitted(self: *const Self, uv: Vec2, point: *const Point3) Color {
+        const tracy_zone = ztracy.ZoneN(@src(), "DiffuseLightEmissiveMaterial::emitted");
+        defer tracy_zone.End();
+
+        return self.texture.value(uv, point);
+    }
+
+    /// noop to satisfy interface
+    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
+        _ = self;
+        _ = ctx;
+        return false;
     }
 };
 
@@ -41,7 +82,7 @@ pub const LambertianMaterial = struct {
         return Material{ .lambertian = Self{ .texture = texture } };
     }
 
-    pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "Lambertian::scatter");
         defer tracy_zone.End();
 
@@ -53,12 +94,12 @@ pub const LambertianMaterial = struct {
         }
 
         const origin = ctx.hit_record.point;
-        ctx.ray_scattered.* = Ray{ 
+        ctx.mut.ray_scattered.* = Ray{ 
             .origin = origin, 
             .direction = scatter_direction, 
             .time = ctx.ray_incoming.time,
         };
-        ctx.attenuation.* = self.texture.value(ctx.hit_record.tex_uv, &origin);
+        ctx.mut.attenuation.* = self.texture.value(ctx.hit_record.tex_uv, &origin);
         return true;
     }
 };
@@ -73,7 +114,7 @@ pub const MetalMaterial = struct {
         return Material{ .metal = Self{ .albedo = albedo, .fuzz = fuzz } };
     }
 
-    pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "Metal::scatter");
         defer tracy_zone.End();
 
@@ -81,12 +122,12 @@ pub const MetalMaterial = struct {
         const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) 
             + blur * rng.sampleUnitSphere(ctx.random);
         const origin = ctx.hit_record.point;
-        ctx.ray_scattered.* = Ray{ 
+        ctx.mut.ray_scattered.* = Ray{ 
             .origin = origin, 
             .direction = scatter_direction, 
             .time = ctx.ray_incoming.time,
         };
-        ctx.attenuation.* = self.albedo;
+        ctx.mut.attenuation.* = self.albedo;
         return (math.dot(scatter_direction, ctx.hit_record.normal) > 0.0);
     }
 };
@@ -100,7 +141,7 @@ pub const DielectricMaterial = struct {
         return Material{ .dielectric = Self{ .refraction_index = refraction_index } };
     }
 
-    pub fn scatter(self: *const Self, ctx: ScatterContext) bool {
+    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "Dielectric::scatter");
         defer tracy_zone.End();
 
@@ -121,7 +162,7 @@ pub const DielectricMaterial = struct {
                 math.refract(in_unit_direction, ctx.hit_record.normal, index);
 
         const origin = ctx.hit_record.point;
-        ctx.ray_scattered.* = Ray{ 
+        ctx.mut.ray_scattered.* = Ray{ 
             .origin = origin, 
             .direction = scatter_direction, 
             .time = ctx.ray_incoming.time,

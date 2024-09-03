@@ -12,11 +12,15 @@ const mat = @import("material.zig");
 const Material = mat.Material;
 
 pub const ScatterContext = struct {
+    /// Keep all mutable fields here for clarity.
+    mut: struct {
+        attenuation: *Color, 
+        ray_scattered: *Ray,
+    },
+
     random: std.Random,
     ray_incoming: *const Ray, 
-    hit_record: *const HitRecord, 
-    attenuation: *Color, 
-    ray_scattered: *Ray,
+    hit_record: *const HitRecord,     
 };
 
 pub const HitRecord = struct {

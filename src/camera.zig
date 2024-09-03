@@ -70,6 +70,8 @@ pub const Camera = struct {
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
 
+    background_color: Color = .{0, 0, 0},
+
     defocus_angle: Real = 0,
     focus_dist: Real = 10,
     defocus_disk_u: Vec3,
@@ -158,17 +160,25 @@ pub const Camera = struct {
         var wg = std.Thread.WaitGroup{};
 
         var render_thread_context = RenderThreadContext{
-            .entity = entity,
+            .mut = .{
+                .framebuffer = framebuffer.buffer,
+            },
 
-            .framebuffer = framebuffer.buffer,
+            // Rendering surface
             .row_idx = 0,
             .col_range = .{ .min = 0, .max = 0 },
             .num_cols = self.image_width,
 
+            // Scene
+            .entity = entity,
+
+            // Raytracing parameters
             .pixel00_loc = self.pixel00_loc,
             .delta_u = self.pixel_delta_u,
             .delta_v = self.pixel_delta_v,
             .center = self.center,
+
+            .background_color = self.background_color,
 
             .defocus_angle = self.defocus_angle,
             .defocus_disk_u = self.defocus_disk_u,
@@ -198,20 +208,28 @@ pub const Camera = struct {
 
 /// Data required for each rendering thread to compute pixel color information.
 const RenderThreadContext = struct {
-    // Contains scene to raytrace.
-    entity: *const Entity,
+    /// Keep mutable fields here for clarity.
+    mut: struct {
+        framebuffer: []Color,
+    },
 
-    // Shared mutable rendering surface parameters.
-    framebuffer: []Color,
+    // Rendering surface parameters.
+    // These define a range that each thread can operate on without race conditions.
     row_idx: usize,
     col_range: math.Interval(usize),
     num_cols: usize,
 
+    // Contains scene to raytrace.
+    entity: *const Entity,
+
     // Raytracing parameters.
+    // These dictate parameters necessary to cast a ray through the scene and calculate an ensuing pixel color.
     pixel00_loc: Point3,
     delta_u: Vec3,
     delta_v: Vec3,
     center: Point3,
+
+    background_color: Color,
 
     defocus_angle: Real,
     defocus_disk_u: Vec3,
@@ -246,9 +264,9 @@ fn rayColorLine(ctx: RenderThreadContext) void {
         var color = Vec3{0, 0, 0};
         for (0..ctx.samples_per_pixel) |_| {
             const ray = sampleRay(&ctx, col_idx);
-            color += rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth);
+            color += rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
         }
-        ctx.framebuffer[ctx.row_idx * ctx.num_cols + col_idx] = color * pixel_color_scale;
+        ctx.mut.framebuffer[ctx.row_idx * ctx.num_cols + col_idx] = color * pixel_color_scale;
     }
 }
 
@@ -288,7 +306,7 @@ fn sampleDefocusDisk(ctx: *const RenderThreadContext) Vec3 {
 }
 
 /// Computes the pixel color for the scene.
-fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize) Color {
+fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize, background_color: Color) Color {
     const tracy_zone = ztracy.ZoneN(@src(), "rayColor");
     defer tracy_zone.End();
 
@@ -308,27 +326,38 @@ fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize) Color {
         },
     };
 
-    // Hit recursion to simulate ray bouncing.
-    if (entity.hit(&ctx, &record)) {
-        var ray_scattered: Ray = undefined;
-        var attenuation_color: Color = .{1, 1, 1};
-        const ctx_scatter = ScatterContext{ 
-            .random = rng.getThreadRng(), 
-            .ray_incoming = ray, 
-            .hit_record = &record, 
+    // Ray hits nothing, return default
+    if (!entity.hit(&ctx, &record)) {
+        return background_color;
+    }
+
+    var ray_scattered: Ray = undefined;
+    var attenuation_color = Color{1, 1, 1};
+    var ctx_scatter = ScatterContext{ 
+        .random = rng.getThreadRng(), 
+        .ray_incoming = ray, 
+        .hit_record = &record, 
+
+        .mut = .{
             .ray_scattered = &ray_scattered,
             .attenuation = &attenuation_color, 
-        };
+        },
+    };
 
-        if (record.material) |material| {
-            if (material.scatter(ctx_scatter)) { 
-                return attenuation_color * rayColor(entity, &ray_scattered, depth - 1);
-            }
+    var emission_color = background_color;
+    var scatter_color = Color{0, 0, 0};
+    if (record.material) |material| {
+        // Emissive light sources.
+        emission_color = material.emitted(record.tex_uv, &record.point);        
+
+        // Surface scattering.
+        // Updates: hit_record, ray_scattered, attenuation
+        if (!material.scatter(&ctx_scatter)) {
+            return emission_color;
         }
-        return Color{0, 0, 0};
-    } 
+        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color)
+            * attenuation_color;
+    }
 
-    const dn = math.normalize(ray.direction);
-    const alpha = 0.5 * (dn[1] + 1.0);
-    return math.lerp(Color{1, 1, 1}, Color{0.5, 0.7, 1.0}, alpha);
+    return emission_color + scatter_color;
 }
