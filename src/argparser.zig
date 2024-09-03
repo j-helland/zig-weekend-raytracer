@@ -1,9 +1,13 @@
 const std = @import("std");
 
+const ARG_PREFIX = '-';
+const ARG_VAL_DELIMITER = "=";
+
 pub const ParseArgsError = error{
     ParseIntFailed,
     ParseBoolFailed,
     ParseFloatFailed,
+    ParseEnumFailed,
     ParseMethodMissingFromType,
     InvalidArgument,
     UnrecognizedArgument,
@@ -24,7 +28,7 @@ pub fn ArgParser(comptime T: type) type {
             // preload so we can detect unknown user args
             inline for (@typeInfo(T).Struct.fields) |field| {
                 try self.keyvals.put(field.name, null);
-            }            
+            }
 
             return self;
         }
@@ -67,12 +71,9 @@ pub fn ArgParser(comptime T: type) type {
         }
 
         fn cacheArgVal(self: *Self, argval: []const u8) !void {
-            std.log.debug("argval: {s}", .{argval});
-            var start_idx: usize = 0;
-            while (start_idx < argval.len and argval[start_idx] == '-') 
-                : (start_idx += 1) {}
+            const start_idx = getArgStartIndex(argval);
 
-            var split = std.mem.splitSequence(u8, argval[start_idx..], "=");
+            var split = std.mem.splitSequence(u8, argval[start_idx..], ARG_VAL_DELIMITER);
             const key = split.next() orelse return ParseArgsError.InvalidArgument;
             const val = split.next() orelse return ParseArgsError.InvalidArgument;
 
@@ -82,13 +83,29 @@ pub fn ArgParser(comptime T: type) type {
     };
 }
 
+fn getArgStartIndex(argval: []const u8) usize {
+    var start_idx: usize = 0;
+    while (start_idx < argval.len and argval[start_idx] == ARG_PREFIX) 
+        : (start_idx += 1) {}
+    return start_idx;
+}
+
 /// Uses reflection to parse a string value into the specified type.
+/// Non primitive types must implement a "parse" method.
 fn parseVal(comptime T: type, val: []const u8) anyerror!T {
+    // Unwrap optional types. Type coercion will handle assignment later.
     if (isOptionalType(T) and std.mem.eql(u8, val, "null")) {
         return null;
     }
+    const type_underlying = unwrapOptionalType(T);
 
-    return switch (unwrapOptionalType(T)) {
+    // Reflect on enum values.
+    if (isEnumType(type_underlying)) {
+        return std.meta.stringToEnum(type_underlying, val)
+            orelse return ParseArgsError.ParseEnumFailed;
+    }
+
+    return switch (type_underlying) {
         []const u8 => val,
 
         bool => 
@@ -100,23 +117,27 @@ fn parseVal(comptime T: type, val: []const u8) anyerror!T {
                 return ParseArgsError.ParseBoolFailed,
 
         // ints
-        usize, u128, u64, u32, u16, u8, isize, i128, i64, i32, i16, i8 => |_T| 
-            std.fmt.parseInt(_T, val, 10)
+        usize, u128, u64, u32, u16, u8, isize, i128, i64, i32, i16, i8 => |t| 
+            std.fmt.parseInt(t, val, 10)
                 catch return ParseArgsError.ParseIntFailed, 
 
         // floats
-        f128, f80, f64, f32, f16 => |_T| 
-            std.fmt.parseFloat(_T, val)
+        f128, f80, f64, f32, f16 => |t| 
+            std.fmt.parseFloat(t, val)
                 catch return ParseArgsError.ParseFloatFailed,
 
         // types with custom parsing logic
-        else => |_T| blk: {
-            if (!std.meta.hasMethod(_T, "parse")) {
+        else => |t| blk: {
+            if (!std.meta.hasMethod(t, "parse")) {
                 return ParseArgsError.ParseMethodMissingFromType;
             }
-            break :blk try _T.parse(val);
+            break :blk try t.parse(val);
         },
     };
+}
+
+inline fn isEnumType(comptime T: type) bool {
+    return (@typeInfo(T) == .Enum);
 }
 
 inline fn isOptionalType(comptime T: type) bool {
@@ -205,4 +226,22 @@ test "ArgParser - nested struct" {
 
     const args = try parser.parse(&argvals);
     try std.testing.expectEqual(1, args.nested.arg1);
+}
+
+test "ArgParser - enum values" {
+    const UserEnum = enum {
+        flag1,
+        flag2,
+    };
+    const UserArgs = struct {
+        flag: UserEnum = .flag1,
+    };
+
+    const argvals = [_][:0]const u8{ "/EXE", "--flag=flag2" };
+
+    var parser = try ArgParser(UserArgs).init(std.testing.allocator);
+    defer parser.deinit();
+
+    const args = try parser.parse(&argvals);
+    try std.testing.expectEqual(UserEnum.flag2, args.flag);
 }
