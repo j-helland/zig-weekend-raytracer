@@ -306,7 +306,7 @@ fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize) Color {
     };
 
     // Hit recursion to simulate ray bouncing.
-    if (entity.hit(ctx, &record)) {
+    if (entity.hit(&ctx, &record)) {
         var ray_scattered: Ray = undefined;
         var attenuation_color: Color = .{1, 1, 1};
         const ctx_scatter = ScatterContext{ 

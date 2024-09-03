@@ -72,14 +72,17 @@ pub const AABB = struct {
     z: Interval(Real) = .{},
 
     pub fn init(a: Vec3, b: Vec3) Self {
-        return .{
+        var self = Self{
             .x = .{ .min = @min(a[0], b[0]), .max = @max(a[0], b[0]) },
             .y = .{ .min = @min(a[1], b[1]), .max = @max(a[1], b[1]) },
             .z = .{ .min = @min(a[2], b[2]), .max = @max(a[2], b[2]) },
         };
+        // Avoid degenerate cases where AABB collapses to zero volume.
+        self.padToMinimum();
+        return self;
     }
 
-    pub fn unionWith(self: *const Self, other: Self) Self {
+    pub fn unionWith(self: *const Self, other: *const Self) Self {
         return Self{
             .x = self.x.unionWith(other.x),
             .y = self.y.unionWith(other.y),
@@ -126,6 +129,13 @@ pub const AABB = struct {
             if (tmax <= tmin) return false;
         }
         return true;
+    }
+
+    fn padToMinimum(self: *Self) void {
+        const delta = 0.0001;
+        if (self.x.size() < delta) self.x = self.x.expand(delta);
+        if (self.y.size() < delta) self.y = self.y.expand(delta);
+        if (self.z.size() < delta) self.z = self.z.expand(delta);
     }
 };
 

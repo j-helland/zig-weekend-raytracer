@@ -17,6 +17,7 @@ const ent = @import("entity.zig");
 const Entity = ent.Entity;
 const EntityCollection = ent.EntityCollection;
 const SphereEntity = ent.SphereEntity;
+const QuadEntity = ent.QuadEntity;
 const HitContext = ent.HitContext;
 const HitRecord = ent.HitRecord;
 const Material = ent.Material;
@@ -240,8 +241,8 @@ fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool,
 fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
     const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "earth.png";
-    // const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "me.jpg";
     // const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "wap.jpg";
+    // const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "me.jpg";
     var earth_image = try img.Image.initFromFile(earth_image_path);
     defer earth_image.deinit();
     std.log.debug("w:{d}, h:{d}", .{earth_image.image.?.width, earth_image.image.?.height});
@@ -263,6 +264,87 @@ fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
     const look_from = Point3{0, 0, 12};
+    const look_at = Point3{0, 0, 0};
+    const view_up = Vec3{ 0, 1, 0 };
+    const focus_dist = 10.0;
+    const defocus_angle = 0.0;
+    var camera = Camera.init(
+        thread_pool,
+        aspect,
+        args.image_width,
+        fov_vertical,
+        look_from,
+        look_at,
+        view_up,
+        focus_dist,
+        defocus_angle,
+    );
+    camera.samples_per_pixel = args.samples_per_pixel;
+    camera.max_ray_bounce_depth = args.ray_bounce_max_depth; 
+
+    // ---- render ----
+    var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, args.image_width);
+    defer framebuffer.deinit();
+    timer.logInfoElapsed("renderer initialized");
+
+    try camera.render(&world, &framebuffer);
+    timer.logInfoElapsed("scene rendered");
+
+    // ---- write ----
+    std.log.debug("Writing image...", .{});
+    var writer = WriterPPM{
+        .allocator = allocator,
+        .thread_pool = thread_pool,
+    };
+    try writer.write(args.image_out_path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
+    timer.logInfoElapsed("scene written to file");
+}
+
+fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+    // ---- textures ----
+    // const texture_red = tex.SolidColorTexture.initTexture(Color{1, 0.2, 0.2});
+    // const texture_green = tex.SolidColorTexture.initTexture(Color{0.2, 1, 0.2});
+    // const texture_blue = tex.SolidColorTexture.initTexture(Color{0.2, 0.2, 1});
+    // const texture_orange = tex.SolidColorTexture.initTexture(Color{1.0, 0.5, 0});
+    // const texture_teal = tex.SolidColorTexture.initTexture(Color{0.2, 0.8, 0.8});
+
+    // const image_path: [:0]const u8 = @import("build_options").asset_dir ++ "me.jpg";
+    const image_path: [:0]const u8 = @import("build_options").asset_dir ++ "wap.jpg";
+    var image = try img.Image.initFromFile(image_path);
+    defer image.deinit();
+
+    const texture_image = tex.ImageTexture.initTexture(&image);
+
+    // ---- materials ----
+    // const material_left = LambertianMaterial.initMaterial(&texture_red);
+    // const material_back = LambertianMaterial.initMaterial(&texture_green);
+    // const material_right = LambertianMaterial.initMaterial(&texture_blue);
+    // const material_top = LambertianMaterial.initMaterial(&texture_orange);
+    // const material_bottom = LambertianMaterial.initMaterial(&texture_teal);
+    
+    const material_left = LambertianMaterial.initMaterial(  &texture_image);
+    const material_back = LambertianMaterial.initMaterial(  &texture_image);
+    const material_right = LambertianMaterial.initMaterial( &texture_image);
+    const material_top = LambertianMaterial.initMaterial(   &texture_image);
+    const material_bottom = LambertianMaterial.initMaterial(&texture_image);
+
+    // ---- entities ----
+    var scene = EntityCollection.init(allocator);
+    defer scene.deinit();
+    try scene.entities.ensureTotalCapacity(5);
+
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{-3,-2, 5}, Vec3{0, 0,-4}, Vec3{0, 4, 0}, &material_left));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{-2,-2, 0}, Vec3{4, 0, 0}, Vec3{0, 4, 0}, &material_right));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ 3,-2, 1}, Vec3{0, 0, 4}, Vec3{0, 4, 0}, &material_back));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{-2, 3, 1}, Vec3{4, 0, 0}, Vec3{0, 0, 4}, &material_top));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{-2,-3, 5}, Vec3{4, 0, 0}, Vec3{0, 0,-4}, &material_bottom));
+
+    const world = Entity{ .collection = scene };
+
+    // ---- camera ----
+    const aspect = 1.0;//16.0 / 9.0;
+    const fov_vertical = 80.0;
+    const look_from = Point3{0, 0, 9};
     const look_at = Point3{0, 0, 0};
     const view_up = Vec3{ 0, 1, 0 };
     const focus_dist = 10.0;
@@ -332,5 +414,6 @@ pub fn main() !void {
     // Scene
     // try bigBountifulBodaciousBeautifulBouncingBalls(allocator, &thread_pool, &timer, args);
     // try checkeredSpheres(allocator, &thread_pool, &timer, args);
-    try earth(allocator, &thread_pool, &timer, args);
+    // try earth(allocator, &thread_pool, &timer, args);
+    try quads(allocator, &thread_pool, &timer, args);
 }

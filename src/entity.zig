@@ -27,6 +27,7 @@ pub const ScatterContext = struct {
     ray_scattered: *Ray,
 };
 
+/// INTERFACE
 pub const Material = union(enum) {
     const Self = @This();
     
@@ -39,9 +40,7 @@ pub const Material = union(enum) {
         defer tracy_zone.End();
 
         return switch (self) {
-            .lambertian => |m| m.scatter(ctx),
-            .metal => |m| m.scatter(ctx),
-            .dielectric => |m| m.scatter(ctx),
+            inline else => |m| m.scatter(ctx),
         };
     }
 };
@@ -174,35 +173,30 @@ pub const HitContext = struct {
     trange: Interval(Real),
 };
 
+/// INTERFACE
 pub const Entity = union(enum) {
     const Self = @This();
 
     sphere: SphereEntity,
+    quad: QuadEntity,
     collection: EntityCollection,
     bvh_node: BVHNodeEntity,
 
     pub fn deinit(self: *Self) void {
         switch(self.*) {
-            .sphere => |*e| e.deinit(),
-            .collection => |*e| e.deinit(),
-            .bvh_node => {},
-            // .bvh_node => |*e| e.deinit(),
+            inline else => |*e| e.deinit(),
         }
     }
 
-    pub fn hit(self: Self, ctx: HitContext, hit_record: *HitRecord) bool {
-        return switch (self) {
-            .sphere => |e| e.hit(ctx, hit_record),
-            .collection => |e| e.hit(ctx, hit_record),
-            .bvh_node => |e| e.hit(ctx, hit_record),
+    pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
+        return switch (self.*) {
+            inline else => |e| e.hit(ctx, hit_record),
         };
     }
 
-    pub fn boundingBox(self: Self) AABB {
-        return switch(self) {
-            .sphere => |e| e.aabb,
-            .collection => |e| e.aabb,
-            .bvh_node => |e| e.aabb,
+    pub fn boundingBox(self: *const Self) *const AABB {
+        return switch(self.*) {
+            inline else => |*e| &e.aabb,
         };
     }
 }; 
@@ -263,11 +257,14 @@ pub const BVHNodeEntity = struct {
         return self;
     }
 
+    /// noop to satisfy interface
+    pub fn deinit(_: *const Self) void {}
+
     pub fn initEntity(allocator: *std.heap.MemoryPool(Entity), entities: []*Entity, start: usize, end: usize) !Entity {
         return Entity{ .bvh_node = try init(allocator, entities, start, end) };
     }
 
-    pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
+    pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "BVH::hit");
         defer tracy_zone.End();
 
@@ -279,10 +276,10 @@ pub const BVHNodeEntity = struct {
             if (self.left) |left| left.hit(ctx, hit_record) 
             else false;
         
-        var ctx_right = ctx;
+        var ctx_right = ctx.*;
         if (hit_left) ctx_right.trange.max = hit_record.t;
         const hit_right = 
-            if (self.right) |right| right.hit(ctx_right, hit_record)
+            if (self.right) |right| right.hit(&ctx_right, hit_record)
             else false;
 
         return hit_left or hit_right;
@@ -314,17 +311,17 @@ pub const EntityCollection = struct {
         self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
 
-    pub fn hit(self: *const Self, _ctx: HitContext, hit_record: *HitRecord) bool {
+    pub fn hit(self: *const Self, _ctx: *const HitContext, hit_record: *HitRecord) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "EntityCollection::hit");
         defer tracy_zone.End();
 
-        var ctx = _ctx;
+        var ctx = _ctx.*;
         var hit_record_tmp  = HitRecord{};
         var b_hit_anything = false;
         var closest_t = ctx.trange.max;
 
         for (self.entities.items) |*entity| {
-            if (entity.hit(ctx, &hit_record_tmp)) {
+            if (entity.hit(&ctx, &hit_record_tmp)) {
                 b_hit_anything = true;
                 closest_t = hit_record_tmp.t;
                 ctx.trange.max = closest_t;
@@ -335,6 +332,84 @@ pub const EntityCollection = struct {
         }
 
         return b_hit_anything;
+    }
+};
+
+pub const QuadEntity = struct {
+    const Self = @This();
+
+    // Parallelogram parameterization.
+    start_point: Point3,
+    axis1: Vec3,
+    axis2: Vec3,
+    axis3: Vec3,
+
+    // containing plane
+    normal: Vec3,
+    offset: Real,
+
+    // Misc.
+    material: *const Material,
+    aabb: AABB,
+
+    /// noop to satisfy interface
+    pub fn deinit(_: *const Self) void {}
+
+    pub fn initEntity(start: Point3, axis1: Vec3, axis2: Vec3, material: *const Material) Entity {
+        // Calculate the plane containing this quad.
+        const normal = math.cross(axis1, axis2);
+        const axis3 = normal / math.vec3s(math.dot(normal, normal));
+        
+        const normal_unit = math.normalize(normal);
+        const offset = math.dot(normal_unit, start);
+
+        const bbox_diag1 = AABB.init(start, start + axis1 + axis2);
+        const bbox_diag2 = AABB.init(start + axis1, start + axis2);
+        const bbox = bbox_diag1.unionWith(&bbox_diag2);
+
+        return Entity{ .quad = Self{
+            .start_point = start,
+            .axis1 = axis1,
+            .axis2 = axis2,
+            .axis3 = axis3,
+
+            .normal = normal_unit,
+            .offset = offset,
+
+            .material = material,
+            .aabb = bbox,
+        }};
+    }
+
+    pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
+        const denom = math.dot(self.normal, ctx.ray.direction);
+
+        // No hit if ray is parallel to plane.
+        if (@abs(denom) < 1e-8) return false;
+
+        // No hit if hit point is outside ray check interval.
+        const t = (self.offset - math.dot(self.normal, ctx.ray.origin)) / denom;
+        if (!ctx.trange.contains(t)) return false;
+
+        const hit_point = ctx.ray.at(t);
+        const planar_hit_point = hit_point - self.start_point;
+        const alpha = math.dot(self.axis3, math.cross(planar_hit_point, self.axis2));
+        const beta = math.dot(self.axis3, math.cross(self.axis1, planar_hit_point));
+
+        if (!isInteriorPoint(alpha, beta)) return false;
+
+        hit_record.t = t;
+        hit_record.point = hit_point;
+        hit_record.material = self.material;
+        hit_record.setFrontFaceNormal(ctx.ray, self.normal);
+        hit_record.tex_uv = Vec2{alpha, beta};
+
+        return true;
+    }
+
+    inline fn isInteriorPoint(alpha: Real, beta: Real) bool {
+        const unit = Interval(Real){ .min = 0, .max = 1 };
+        return (unit.contains(alpha) and unit.contains(beta));
     }
 };
 
@@ -378,7 +453,7 @@ pub const SphereEntity = struct {
         }};
     }
 
-    pub fn hit(self: *const Self, ctx: HitContext, hit_record: *HitRecord) bool {
+    pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "Sphere::hit");
         defer tracy_zone.End();
 

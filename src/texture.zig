@@ -11,6 +11,7 @@ const img = @import("image.zig");
 
 const DEBUG_IMAGE = img.Image{};
 
+/// INTERFACE
 pub const Texture = union(enum) {
     const Self = @This();
 
@@ -20,9 +21,7 @@ pub const Texture = union(enum) {
 
     pub fn value(self: Self, uv: Vec2, point: *const Point) Color {
         return switch (self) {
-            .solid_color => |t| t.value(uv, point),
-            .checkerboard => |t| t.value(uv, point),
-            .image => |t| t.value(uv, point),
+            inline else => |t| t.value(uv, point),
         };
     } 
 };
