@@ -12,7 +12,7 @@ const img = @import("image.zig");
 const DEBUG_IMAGE = img.Image{};
 
 /// INTERFACE
-pub const Texture = union(enum) {
+pub const ITexture = union(enum) {
     const Self = @This();
 
     solid_color: SolidColorTexture,
@@ -23,7 +23,7 @@ pub const Texture = union(enum) {
         return switch (self) {
             inline else => |t| t.value(uv, point),
         };
-    } 
+    }
 };
 
 pub const ImageTexture = struct {
@@ -31,8 +31,8 @@ pub const ImageTexture = struct {
 
     image: *const img.Image,
 
-    pub fn initTexture(image: *const img.Image) Texture {
-        return Texture{ .image = Self{ .image = image } };
+    pub fn initTexture(image: *const img.Image) ITexture {
+        return ITexture{ .image = Self{ .image = image } };
     }
 
     /// Samples the image pixel given a UV coordinate. Colors are returned in linear colorspace.
@@ -77,8 +77,8 @@ pub const SolidColorTexture = struct {
 
     color: Color,
 
-    pub fn initTexture(color: Color) Texture {
-        return Texture{ .solid_color = Self{ .color = color } };
+    pub fn initTexture(color: Color) ITexture {
+        return ITexture{ .solid_color = Self{ .color = color } };
     }
 
     pub fn value(self: *const Self, uv: Vec2, point: *const Point) Color {
@@ -92,15 +92,15 @@ pub const CheckerboardTexture = struct {
     const Self = @This();
 
     inv_scale: math.Real,
-    tex_even: *const Texture,
-    tex_odd: *const Texture,
+    tex_even: *const ITexture,
+    tex_odd: *const ITexture,
 
-    pub fn initTexture(inv_scale: math.Real, tex_even: *const Texture, tex_odd: *const Texture) Texture {
-        return Texture{ .checkerboard = CheckerboardTexture{
+    pub fn initTexture(inv_scale: math.Real, tex_even: *const ITexture, tex_odd: *const ITexture) ITexture {
+        return ITexture{ .checkerboard = CheckerboardTexture{
             .inv_scale = inv_scale,
             .tex_even = tex_even,
             .tex_odd = tex_odd,
-        }};
+        } };
     }
 
     pub fn value(self: *const Self, uv: Vec2, point: *const Point) Color {
@@ -109,8 +109,6 @@ pub const CheckerboardTexture = struct {
         const z_int = @as(i32, @intFromFloat((@floor(self.inv_scale * point[2]))));
 
         const is_even = @mod(x_int + y_int + z_int, 2) == 0;
-        return
-            if (is_even) self.tex_even.value(uv, point)
-            else self.tex_odd.value(uv, point);
+        return if (is_even) self.tex_even.value(uv, point) else self.tex_odd.value(uv, point);
     }
 };

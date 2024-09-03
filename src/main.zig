@@ -12,14 +12,14 @@ const Color = math.Vec3;
 const vec3s = math.vec3s;
 const Interval = math.Interval;
 
-const Material = @import("material.zig").Material;
+const IMaterial = @import("material.zig").Material;
 const MetalMaterial = @import("material.zig").MetalMaterial;
 const LambertianMaterial = @import("material.zig").LambertianMaterial;
 const DielectricMaterial = @import("material.zig").DielectricMaterial;
 const DiffuseLightEmissiveMaterial = @import("material.zig").DiffuseLightEmissiveMaterial;
 
 const ent = @import("entity.zig");
-const Entity = ent.Entity;
+const IEntity = ent.IEntity;
 const EntityCollection = ent.EntityCollection;
 const SphereEntity = ent.SphereEntity;
 const QuadEntity = ent.QuadEntity;
@@ -63,7 +63,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     defer textures.deinit();
     try textures.ensureTotalCapacity(22 * 22);
 
-    var materials = std.ArrayList(Material).init(allocator);
+    var materials = std.ArrayList(IMaterial).init(allocator);
     defer materials.deinit();
     try materials.ensureTotalCapacity(22 * 22);
 
@@ -123,12 +123,12 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     const material3 = MetalMaterial.initMaterial(Color{ 0.7, 0.6, 0.5 }, 0.0);
     scene.addAssumeCapacity(SphereEntity.initEntity(Point3{ 4, 1, 0 }, 1, &material3));
 
-    var entity_refs = try std.ArrayList(*Entity).initCapacity(allocator, scene.entities.items.len);
+    var entity_refs = try std.ArrayList(*IEntity).initCapacity(allocator, scene.entities.items.len);
     defer entity_refs.deinit();
     for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
 
     // Use the following for BVH-tree (accelerated) rendering.
-    var mem_pool = std.heap.MemoryPool(Entity).init(std.heap.page_allocator);
+    var mem_pool = std.heap.MemoryPool(IEntity).init(std.heap.page_allocator);
     defer mem_pool.deinit();
     var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
 
@@ -194,7 +194,7 @@ fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool,
     try scene.add(SphereEntity.initEntity(Point3{ 0, -10, 0 }, 10, &material));
     try scene.add(SphereEntity.initEntity(Point3{ 0, 10, 0 }, 10, &material));
 
-    const world = Entity{ .collection = scene };
+    const world = IEntity{ .collection = scene };
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
@@ -257,7 +257,7 @@ fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
 
     try scene.add(SphereEntity.initEntity(Point3{ 0, 0, 0 }, 1.5, &material));
 
-    const world = Entity{ .collection = scene };
+    const world = IEntity{ .collection = scene };
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
@@ -339,7 +339,7 @@ fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ -2, 3, 1 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, 4 }, &material_top));
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ -2, -3, 5 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, -4 }, &material_bottom));
 
-    const world = Entity{ .collection = scene };
+    const world = IEntity{ .collection = scene };
 
     // ---- camera ----
     const aspect = 1.0; //16.0 / 9.0;
@@ -409,7 +409,7 @@ fn emissive(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: 
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{3, 1, -2}, Vec3{2, 0, 0}, Vec3{0, 2, 0}, &material_light));
     scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, 7, 0}, 1, &material_light));
 
-    const world = Entity{ .collection = scene };
+    const world = IEntity{ .collection = scene };
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
@@ -482,11 +482,11 @@ fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{343, 554, 332}, Vec3{-130, 0, 0}, Vec3{0, 0, -105}, &material_light));
 
     // Use the following for BVH-tree (accelerated) rendering.
-    var entity_refs = try std.ArrayList(*Entity).initCapacity(allocator, scene.entities.items.len);
+    var entity_refs = try std.ArrayList(*IEntity).initCapacity(allocator, scene.entities.items.len);
     defer entity_refs.deinit();
     for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
 
-    var mem_pool = std.heap.MemoryPool(Entity).init(std.heap.page_allocator);
+    var mem_pool = std.heap.MemoryPool(IEntity).init(std.heap.page_allocator);
     defer mem_pool.deinit();
     var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
 

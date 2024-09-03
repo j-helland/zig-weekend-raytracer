@@ -2,24 +2,24 @@ const std = @import("std");
 
 const ztracy = @import("ztracy");
 
-const Texture = @import("texture.zig").Texture;
+const ITexture = @import("texture.zig").ITexture;
 
-const Ray            = @import("ray.zig").Ray;
-const HitRecord      = @import("ray.zig").HitRecord;
+const Ray = @import("ray.zig").Ray;
+const HitRecord = @import("ray.zig").HitRecord;
 const ScatterContext = @import("ray.zig").ScatterContext;
 
-const math   = @import("math.zig");
-const Real   = math.Real;
-const Vec2   = math.Vec2;
+const math = @import("math.zig");
+const Real = math.Real;
+const Vec2 = math.Vec2;
 const Point3 = math.Vec3;
-const Color  = math.Vec3;
+const Color = math.Vec3;
 
 const rng = @import("rng.zig");
 
 /// INTERFACE
-pub const Material = union(enum) {
+pub const IMaterial = union(enum) {
     const Self = @This();
-    
+
     lambertian: LambertianMaterial,
     metal: MetalMaterial,
     dielectric: DielectricMaterial,
@@ -30,12 +30,11 @@ pub const Material = union(enum) {
         defer tracy_zone.End();
 
         return switch (self.*) {
-            inline else => |*m| 
-                if (std.meta.hasMethod(@TypeOf(m.*), "emitted")) 
-                    m.emitted(uv, point)
-                else
-                    // Default no light emitted.
-                    Color{0, 0, 0},
+            inline else => |*m| if (std.meta.hasMethod(@TypeOf(m.*), "emitted"))
+                m.emitted(uv, point)
+            else
+                // Default no light emitted.
+                Color{ 0, 0, 0 },
         };
     }
 
@@ -52,10 +51,10 @@ pub const Material = union(enum) {
 pub const DiffuseLightEmissiveMaterial = struct {
     const Self = @This();
 
-    texture: *const Texture,
+    texture: *const ITexture,
 
-    pub fn initMaterial(texture: *const Texture) Material {
-        return Material{ .diffuse_emissive = Self{ .texture = texture } };
+    pub fn initMaterial(texture: *const ITexture) IMaterial {
+        return IMaterial{ .diffuse_emissive = Self{ .texture = texture } };
     }
 
     pub fn emitted(self: *const Self, uv: Vec2, point: *const Point3) Color {
@@ -76,10 +75,10 @@ pub const DiffuseLightEmissiveMaterial = struct {
 pub const LambertianMaterial = struct {
     const Self = @This();
 
-    texture: *const Texture,
+    texture: *const ITexture,
 
-    pub fn initMaterial(texture: *const Texture) Material {
-        return Material{ .lambertian = Self{ .texture = texture } };
+    pub fn initMaterial(texture: *const ITexture) IMaterial {
+        return IMaterial{ .lambertian = Self{ .texture = texture } };
     }
 
     pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
@@ -94,9 +93,9 @@ pub const LambertianMaterial = struct {
         }
 
         const origin = ctx.hit_record.point;
-        ctx.mut.ray_scattered.* = Ray{ 
-            .origin = origin, 
-            .direction = scatter_direction, 
+        ctx.mut.ray_scattered.* = Ray{
+            .origin = origin,
+            .direction = scatter_direction,
             .time = ctx.ray_incoming.time,
         };
         ctx.mut.attenuation.* = self.texture.value(ctx.hit_record.tex_uv, &origin);
@@ -110,8 +109,8 @@ pub const MetalMaterial = struct {
     albedo: Color,
     fuzz: Real,
 
-    pub fn initMaterial(albedo: Color, fuzz: Real) Material {
-        return Material{ .metal = Self{ .albedo = albedo, .fuzz = fuzz } };
+    pub fn initMaterial(albedo: Color, fuzz: Real) IMaterial {
+        return IMaterial{ .metal = Self{ .albedo = albedo, .fuzz = fuzz } };
     }
 
     pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
@@ -119,12 +118,11 @@ pub const MetalMaterial = struct {
         defer tracy_zone.End();
 
         const blur = math.vec3s(std.math.clamp(self.fuzz, 0, 1));
-        const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) 
-            + blur * rng.sampleUnitSphere(ctx.random);
+        const scatter_direction = math.reflect(ctx.ray_incoming.direction, ctx.hit_record.normal) + blur * rng.sampleUnitSphere(ctx.random);
         const origin = ctx.hit_record.point;
-        ctx.mut.ray_scattered.* = Ray{ 
-            .origin = origin, 
-            .direction = scatter_direction, 
+        ctx.mut.ray_scattered.* = Ray{
+            .origin = origin,
+            .direction = scatter_direction,
             .time = ctx.ray_incoming.time,
         };
         ctx.mut.attenuation.* = self.albedo;
@@ -137,34 +135,33 @@ pub const DielectricMaterial = struct {
 
     refraction_index: Real,
 
-    pub fn initMaterial(refraction_index: Real) Material {
-        return Material{ .dielectric = Self{ .refraction_index = refraction_index } };
+    pub fn initMaterial(refraction_index: Real) IMaterial {
+        return IMaterial{ .dielectric = Self{ .refraction_index = refraction_index } };
     }
 
     pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "Dielectric::scatter");
         defer tracy_zone.End();
 
-        const index = 
-            if (ctx.hit_record.b_front_face) 1.0 / self.refraction_index 
-            else self.refraction_index;
+        const index =
+            if (ctx.hit_record.b_front_face) 1.0 / self.refraction_index else self.refraction_index;
         const in_unit_direction = math.normalize(ctx.ray_incoming.direction);
 
         const cos_theta = @min(math.dot(-in_unit_direction, ctx.hit_record.normal), 1.0);
         const sin_theta = @sqrt(1 - cos_theta * cos_theta);
 
-        const scatter_direction = 
-            if (index * sin_theta > 1.0 or self.reflectance(cos_theta) > ctx.random.float(Real)) 
-                // must reflect
-                math.reflect(in_unit_direction, ctx.hit_record.normal)
-            else 
-                // can refract
-                math.refract(in_unit_direction, ctx.hit_record.normal, index);
+        const scatter_direction =
+            if (index * sin_theta > 1.0 or self.reflectance(cos_theta) > ctx.random.float(Real))
+            // must reflect
+            math.reflect(in_unit_direction, ctx.hit_record.normal)
+        else
+            // can refract
+            math.refract(in_unit_direction, ctx.hit_record.normal, index);
 
         const origin = ctx.hit_record.point;
-        ctx.mut.ray_scattered.* = Ray{ 
-            .origin = origin, 
-            .direction = scatter_direction, 
+        ctx.mut.ray_scattered.* = Ray{
+            .origin = origin,
+            .direction = scatter_direction,
             .time = ctx.ray_incoming.time,
         };
         return true;

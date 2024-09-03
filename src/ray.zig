@@ -9,7 +9,6 @@ const Color = math.Vec3;
 const Interval = math.Interval;
 
 const mat = @import("material.zig");
-const Material = mat.Material;
 
 pub const ScatterContext = struct {
     /// Keep all mutable fields here for clarity.
@@ -28,7 +27,7 @@ pub const HitRecord = struct {
 
     point: Point3 = .{0, 0, 0},
     normal: Vec3 = .{0, 0, 0},
-    material: ?*const Material = null,
+    material: ?*const mat.IMaterial = null,
     t: Real = std.math.inf(Real),
     tex_uv: Vec2 = .{0, 0},
     b_front_face: bool = false,

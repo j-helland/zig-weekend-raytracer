@@ -14,15 +14,15 @@ const Interval = math.Interval;
 const Ray = math.Ray;
 const AABB = math.AABB;
 
-const Texture = @import("texture.zig").Texture;
-const Material = @import("material.zig").Material;
+const ITexture = @import("texture.zig").ITexture;
+const IMaterial = @import("material.zig").IMaterial;
 const HitContext = @import("ray.zig").HitContext;
 const HitRecord = @import("ray.zig").HitRecord;
 
 const rng = @import("rng.zig");
 
 /// INTERFACE
-pub const Entity = union(enum) {
+pub const IEntity = union(enum) {
     const Self = @This();
 
     sphere: SphereEntity,
@@ -31,7 +31,7 @@ pub const Entity = union(enum) {
     bvh_node: BVHNodeEntity,
 
     pub fn deinit(self: *Self) void {
-        switch(self.*) {
+        switch (self.*) {
             inline else => |*e| e.deinit(),
         }
     }
@@ -43,16 +43,17 @@ pub const Entity = union(enum) {
     }
 
     pub fn boundingBox(self: *const Self) *const AABB {
-        return switch(self.*) {
+        return switch (self.*) {
             inline else => |*e| &e.aabb,
         };
     }
-}; 
+};
 
+/// Sorting for BVH splitting
 const BoxCmpContext = struct {
     axis: math.Axis,
 };
-fn boxCmp(ctx: BoxCmpContext, a: *const Entity, b: *const Entity) bool {
+fn boxCmp(ctx: BoxCmpContext, a: *const IEntity, b: *const IEntity) bool {
     const a_axis_interval = a.boundingBox().axisInterval(ctx.axis);
     const b_axis_interval = b.boundingBox().axisInterval(ctx.axis);
     return (a_axis_interval.min < b_axis_interval.min);
@@ -62,11 +63,11 @@ fn boxCmp(ctx: BoxCmpContext, a: *const Entity, b: *const Entity) bool {
 pub const BVHNodeEntity = struct {
     const Self = @This();
 
-    left: ?*Entity,
-    right: ?*Entity,
-    aabb: AABB, 
+    left: ?*IEntity,
+    right: ?*IEntity,
+    aabb: AABB,
 
-    pub fn init(allocator: *std.heap.MemoryPool(Entity), entities: []*Entity, start: usize, end: usize) !Self {
+    pub fn init(allocator: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !Self {
         var self: BVHNodeEntity = undefined;
 
         // Populate left/right children.
@@ -74,11 +75,9 @@ pub const BVHNodeEntity = struct {
         if (span == 1) {
             self.left = entities[start];
             self.right = entities[start];
-
         } else if (span == 2) {
             self.left = entities[start];
             self.right = entities[start + 1];
-
         } else {
             // node splitting
             // choose axis aligned with longest bbox face
@@ -88,14 +87,14 @@ pub const BVHNodeEntity = struct {
             }
             const axis = bbox.longestAxis();
 
-            std.sort.pdq(*Entity, entities[start..end], BoxCmpContext{ .axis = axis }, boxCmp);
+            std.sort.pdq(*IEntity, entities[start..end], BoxCmpContext{ .axis = axis }, boxCmp);
             const mid = start + span / 2;
 
             self.left = try allocator.create();
-            self.left.?.* = Entity{ .bvh_node = try Self.init(allocator, entities, start, mid) };
+            self.left.?.* = IEntity{ .bvh_node = try Self.init(allocator, entities, start, mid) };
 
             self.right = try allocator.create();
-            self.right.?.* = Entity{ .bvh_node = try Self.init(allocator, entities, mid, end) };
+            self.right.?.* = IEntity{ .bvh_node = try Self.init(allocator, entities, mid, end) };
         }
 
         self.aabb = self.left.?.boundingBox().unionWith(self.right.?.boundingBox());
@@ -106,8 +105,8 @@ pub const BVHNodeEntity = struct {
     /// noop to satisfy interface
     pub fn deinit(_: *const Self) void {}
 
-    pub fn initEntity(allocator: *std.heap.MemoryPool(Entity), entities: []*Entity, start: usize, end: usize) !Entity {
-        return Entity{ .bvh_node = try init(allocator, entities, start, end) };
+    pub fn initEntity(allocator: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !IEntity {
+        return IEntity{ .bvh_node = try init(allocator, entities, start, end) };
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
@@ -118,15 +117,13 @@ pub const BVHNodeEntity = struct {
             return false;
         }
 
-        const hit_left = 
-            if (self.left) |left| left.hit(ctx, hit_record) 
-            else false;
-        
+        const hit_left =
+            if (self.left) |left| left.hit(ctx, hit_record) else false;
+
         var ctx_right = ctx.*;
         if (hit_left) ctx_right.trange.max = hit_record.t;
-        const hit_right = 
-            if (self.right) |right| right.hit(&ctx_right, hit_record)
-            else false;
+        const hit_right =
+            if (self.right) |right| right.hit(&ctx_right, hit_record) else false;
 
         return hit_left or hit_right;
     }
@@ -135,11 +132,11 @@ pub const BVHNodeEntity = struct {
 pub const EntityCollection = struct {
     const Self = @This();
 
-    entities: std.ArrayList(Entity),
+    entities: std.ArrayList(IEntity),
     aabb: AABB = .{},
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        return .{ .entities = std.ArrayList(Entity).init(allocator) };
+        return .{ .entities = std.ArrayList(IEntity).init(allocator) };
     }
 
     pub fn deinit(self: *Self) void {
@@ -147,12 +144,12 @@ pub const EntityCollection = struct {
         self.entities.deinit();
     }
 
-    pub fn add(self: *Self, entity: Entity) AllocatorError!void {
+    pub fn add(self: *Self, entity: IEntity) AllocatorError!void {
         try self.entities.append(entity);
         self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
 
-    pub fn addAssumeCapacity(self: *Self, entity: Entity) void {
+    pub fn addAssumeCapacity(self: *Self, entity: IEntity) void {
         self.entities.appendAssumeCapacity(entity);
         self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
@@ -162,7 +159,7 @@ pub const EntityCollection = struct {
         defer tracy_zone.End();
 
         var ctx = _ctx.*;
-        var hit_record_tmp  = HitRecord{};
+        var hit_record_tmp = HitRecord{};
         var b_hit_anything = false;
         var closest_t = ctx.trange.max;
 
@@ -181,7 +178,8 @@ pub const EntityCollection = struct {
     }
 };
 
-pub fn createBoxEntity(allocator: std.mem.Allocator, point_a: Point3, point_b: Point3, material: *const Material) !Entity {
+/// composite of quads arranged in a box; contained in EntityCollection
+pub fn createBoxEntity(allocator: std.mem.Allocator, point_a: Point3, point_b: Point3, material: *const IMaterial) !IEntity {
     var sides = EntityCollection.init(allocator);
     try sides.entities.ensureTotalCapacity(6);
 
@@ -198,18 +196,18 @@ pub fn createBoxEntity(allocator: std.mem.Allocator, point_a: Point3, point_b: P
     };
 
     const diff = max - min;
-    const dx = Vec3{diff[0], 0, 0};
-    const dy = Vec3{0, diff[1], 0};
-    const dz = Vec3{0, 0, diff[2]};
+    const dx = Vec3{ diff[0], 0, 0 };
+    const dy = Vec3{ 0, diff[1], 0 };
+    const dz = Vec3{ 0, 0, diff[2] };
 
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], min[1], max[2]}, dx, dy, material));  // front
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{max[0], min[1], max[2]}, -dz, dy, material)); // right
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{max[0], min[1], min[2]}, -dx, dy, material)); // back
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], min[1], min[2]}, dz, dy, material));  // left
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], max[1], max[2]}, dx, -dz, material)); // top
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], min[1], min[2]}, dx, dz, material)); // bottom
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], min[1], max[2] }, dx, dy, material)); // front
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ max[0], min[1], max[2] }, -dz, dy, material)); // right
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ max[0], min[1], min[2] }, -dx, dy, material)); // back
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], min[1], min[2] }, dz, dy, material)); // left
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], max[1], max[2] }, dx, -dz, material)); // top
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], min[1], min[2] }, dx, dz, material)); // bottom
 
-    return Entity{ .collection = sides };
+    return IEntity{ .collection = sides };
 }
 
 pub const QuadEntity = struct {
@@ -226,17 +224,17 @@ pub const QuadEntity = struct {
     offset: Real,
 
     // Misc.
-    material: *const Material,
+    material: *const IMaterial,
     aabb: AABB,
 
     /// noop to satisfy interface
     pub fn deinit(_: *const Self) void {}
 
-    pub fn initEntity(start: Point3, axis1: Vec3, axis2: Vec3, material: *const Material) Entity {
+    pub fn initEntity(start: Point3, axis1: Vec3, axis2: Vec3, material: *const IMaterial) IEntity {
         // Calculate the plane containing this quad.
         const normal = math.cross(axis1, axis2);
         const axis3 = normal / math.vec3s(math.dot(normal, normal));
-        
+
         const normal_unit = math.normalize(normal);
         const offset = math.dot(normal_unit, start);
 
@@ -244,7 +242,7 @@ pub const QuadEntity = struct {
         const bbox_diag2 = AABB.init(start + axis1, start + axis2);
         const bbox = bbox_diag1.unionWith(&bbox_diag2);
 
-        return Entity{ .quad = Self{
+        return IEntity{ .quad = Self{
             .start_point = start,
             .axis1 = axis1,
             .axis2 = axis2,
@@ -255,7 +253,7 @@ pub const QuadEntity = struct {
 
             .material = material,
             .aabb = bbox,
-        }};
+        } };
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
@@ -279,7 +277,7 @@ pub const QuadEntity = struct {
         hit_record.point = hit_point;
         hit_record.material = self.material;
         hit_record.setFrontFaceNormal(ctx.ray, self.normal);
-        hit_record.tex_uv = Vec2{alpha, beta};
+        hit_record.tex_uv = Vec2{ alpha, beta };
 
         return true;
     }
@@ -295,30 +293,30 @@ pub const SphereEntity = struct {
 
     center: Point3,
     radius: Real,
-    material: *const Material,
+    material: *const IMaterial,
     aabb: AABB,
 
     b_is_moving: bool = false,
-    movement_direction: Vec3 = .{0, 0, 0},
+    movement_direction: Vec3 = .{ 0, 0, 0 },
 
     /// noop to satisfy interface
     pub fn deinit(_: *const Self) void {}
 
-    pub fn initEntity(center: Point3, radius: Real, material: *const Material) Entity {
+    pub fn initEntity(center: Point3, radius: Real, material: *const IMaterial) IEntity {
         const rvec = math.vec3s(radius);
 
-        return Entity{ .sphere = Self{ 
-            .center = center, 
-            .radius = radius, 
-            .material = material, 
+        return IEntity{ .sphere = Self{
+            .center = center,
+            .radius = radius,
+            .material = material,
             .aabb = AABB.init(center - rvec, center + rvec),
-        }};
+        } };
     }
 
-    pub fn initEntityAnimated(center_start: Point3, center_end: Point3, radius: Real, material: *const Material) Entity {
+    pub fn initEntityAnimated(center_start: Point3, center_end: Point3, radius: Real, material: *const IMaterial) IEntity {
         const rvec = math.vec3s(radius);
 
-        return Entity{ .sphere = Self{
+        return IEntity{ .sphere = Self{
             .center = center_start,
             .radius = radius,
             .material = material,
@@ -327,7 +325,7 @@ pub const SphereEntity = struct {
             .aabb = AABB
                 .init(center_start - rvec, center_start + rvec)
                 .unionWith(AABB.init(center_end - rvec, center_end + rvec)),
-        }};
+        } };
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
@@ -335,9 +333,8 @@ pub const SphereEntity = struct {
         defer tracy_zone.End();
 
         // animation
-        const center = 
-            if (self.b_is_moving) self.move(ctx.ray.time) 
-            else self.center;
+        const center =
+            if (self.b_is_moving) self.move(ctx.ray.time) else self.center;
 
         // direction from ray to sphere center
         const oc = center - ctx.ray.origin;
@@ -345,7 +342,7 @@ pub const SphereEntity = struct {
         const a = math.dot(ctx.ray.direction, ctx.ray.direction);
         const h = math.dot(ctx.ray.direction, oc);
         const c = math.dot(oc, oc) - self.radius * self.radius;
-        const discriminant = h*h - a*c;
+        const discriminant = h * h - a * c;
 
         if (discriminant < 0.0) return false;
 
@@ -378,7 +375,7 @@ pub const SphereEntity = struct {
         const theta = std.math.acos(-v[1]);
         const phi = std.math.atan2(-v[2], v[0]) + std.math.pi;
         return Vec2{
-            phi / (2*std.math.pi),
+            phi / (2 * std.math.pi),
             theta / std.math.pi,
         };
     }

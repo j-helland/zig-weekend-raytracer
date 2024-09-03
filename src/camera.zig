@@ -9,16 +9,16 @@ const Vec3 = math.Vec3;
 const Color = math.Vec3;
 const Point3 = math.Vec3;
 
-const Ray            = @import("ray.zig").Ray;
-const HitRecord      = @import("ray.zig").HitRecord;
-const HitContext     = @import("ray.zig").HitContext;
+const Ray = @import("ray.zig").Ray;
+const HitRecord = @import("ray.zig").HitRecord;
+const HitContext = @import("ray.zig").HitContext;
 const ScatterContext = @import("ray.zig").ScatterContext;
 
 const ent = @import("entity.zig");
-const Entity = ent.Entity;
+const IEntity = ent.IEntity;
 
 const mat = @import("material.zig");
-const Material = mat.Material;
+const IMaterial = mat.IMaterial;
 const MetalMaterial = mat.MetalMaterial;
 const LambertiaMaterial = mat.LambertianMaterial;
 
@@ -55,9 +55,9 @@ pub const Camera = struct {
     const Self = @This();
 
     fov_vertical: Real = 90.0,
-    look_from: Point3 = .{0, 0, 0},
-    look_at: Point3 = .{0, 0, -1},
-    view_up: Vec3 = .{0, 1, 0},
+    look_from: Point3 = .{ 0, 0, 0 },
+    look_at: Point3 = .{ 0, 0, -1 },
+    view_up: Vec3 = .{ 0, 1, 0 },
     basis_u: Vec3,
     basis_v: Vec3,
     basis_w: Vec3,
@@ -70,7 +70,7 @@ pub const Camera = struct {
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
 
-    background_color: Color = .{0, 0, 0},
+    background_color: Color = .{ 0, 0, 0 },
 
     defocus_angle: Real = 0,
     focus_dist: Real = 10,
@@ -83,9 +83,9 @@ pub const Camera = struct {
     thread_pool: *std.Thread.Pool,
 
     pub fn init(
-        thread_pool: *std.Thread.Pool, 
+        thread_pool: *std.Thread.Pool,
         aspect: Real,
-        img_width: usize, 
+        img_width: usize,
         fov_vertical: Real,
         look_from: Point3,
         look_at: Point3,
@@ -114,11 +114,8 @@ pub const Camera = struct {
         const pixel_delta_v = viewport_v / math.vec3s(@floatFromInt(img_height));
 
         // upper left pixel location
-        const viewport_upper_left = look_from 
-            - (math.vec3s(focus_dist) * w)
-            - viewport_u / math.vec3s(2) 
-            - viewport_v / math.vec3s(2);
-        const pixel00_loc = viewport_upper_left + math.vec3s(0.5) * (pixel_delta_u + pixel_delta_v);        
+        const viewport_upper_left = look_from - (math.vec3s(focus_dist) * w) - viewport_u / math.vec3s(2) - viewport_v / math.vec3s(2);
+        const pixel00_loc = viewport_upper_left + math.vec3s(0.5) * (pixel_delta_u + pixel_delta_v);
 
         // calculate camera defocus disk basis vectors
         const defocus_radius = math.vec3s(focus_dist * @tan(std.math.degreesToRadians(defocus_angle / 2.0)));
@@ -140,7 +137,7 @@ pub const Camera = struct {
             .pixel_delta_v = pixel_delta_v,
 
             .aspect_ratio = aspect,
-            .image_width = img_width, 
+            .image_width = img_width,
             .image_height = img_height,
             .pixel00_loc = pixel00_loc,
 
@@ -153,10 +150,10 @@ pub const Camera = struct {
         };
     }
 
-    pub fn render(self: *const Self, entity: *const Entity, framebuffer: *Framebuffer) !void {
+    pub fn render(self: *const Self, entity: *const IEntity, framebuffer: *Framebuffer) !void {
         const tracy_zone = ztracy.ZoneN(@src(), "Camera::render");
         defer tracy_zone.End();
-        
+
         var wg = std.Thread.WaitGroup{};
 
         var render_thread_context = RenderThreadContext{
@@ -199,7 +196,7 @@ pub const Camera = struct {
             while (idx_u < self.image_width) : (idx_u += block_size) {
                 // Handle uneven chunking.
                 render_thread_context.col_range = .{ .min = idx_u, .max = @min(self.image_width, idx_u + block_size) };
-                self.thread_pool.spawnWg(&wg, rayColorLine, .{ render_thread_context });
+                self.thread_pool.spawnWg(&wg, rayColorLine, .{render_thread_context});
             }
         }
         self.thread_pool.waitAndWork(&wg);
@@ -220,7 +217,7 @@ const RenderThreadContext = struct {
     num_cols: usize,
 
     // Contains scene to raytrace.
-    entity: *const Entity,
+    entity: *const IEntity,
 
     // Raytracing parameters.
     // These dictate parameters necessary to cast a ray through the scene and calculate an ensuing pixel color.
@@ -249,7 +246,7 @@ fn encodeColor(_color: Color) [3]u8 {
     const ig = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[1])));
     const ib = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[2])));
 
-    return .{ir, ig, ib};
+    return .{ ir, ig, ib };
 }
 
 /// Raytraces a pixel line and writes the result into the framebuffer.
@@ -261,7 +258,7 @@ fn rayColorLine(ctx: RenderThreadContext) void {
     const pixel_color_scale = math.vec3s(1.0 / @as(Real, @floatFromInt(ctx.samples_per_pixel)));
 
     for (ctx.col_range.min..ctx.col_range.max) |col_idx| {
-        var color = Vec3{0, 0, 0};
+        var color = Vec3{ 0, 0, 0 };
         for (0..ctx.samples_per_pixel) |_| {
             const ray = sampleRay(&ctx, col_idx);
             color += rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
@@ -280,21 +277,17 @@ fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
     // Create a ray originating from the defocus disk and directed at a randomly sampled point around the pixel.
     // - defocus disk sampling simulates depth of field
     // - sampling randomly around the pixel performs multisample antialiasing
-    const offset = 
-        if (ctx.samples_per_pixel == 1) Vec3{0, 0, 0} 
-        else rng.sampleSquareXY(rand);
-    const sample = ctx.pixel00_loc 
-        + ctx.delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0])
-        + ctx.delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
+    const offset =
+        if (ctx.samples_per_pixel == 1) Vec3{ 0, 0, 0 } else rng.sampleSquareXY(rand);
+    const sample = ctx.pixel00_loc + ctx.delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0]) + ctx.delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
 
-    const origin = 
-        if (ctx.defocus_angle <= 0.0) ctx.center 
-        else sampleDefocusDisk(ctx);
+    const origin =
+        if (ctx.defocus_angle <= 0.0) ctx.center else sampleDefocusDisk(ctx);
     const direction = sample - origin;
     const time = rand.float(Real);
 
-    return Ray{ 
-        .origin = origin, 
+    return Ray{
+        .origin = origin,
         .direction = direction,
         .time = time,
     };
@@ -306,12 +299,12 @@ fn sampleDefocusDisk(ctx: *const RenderThreadContext) Vec3 {
 }
 
 /// Computes the pixel color for the scene.
-fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize, background_color: Color) Color {
+fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_color: Color) Color {
     const tracy_zone = ztracy.ZoneN(@src(), "rayColor");
     defer tracy_zone.End();
 
     // Bounce recursion depth exceeded.
-    if (depth == 0) return Color{0, 0, 0};
+    if (depth == 0) return Color{ 0, 0, 0 };
 
     // Correction factor to ignore spurious hits due to floating point precision issues when the ray is very close to the surface.
     // This helps reduce z-fighting / shadow-acne issues.
@@ -320,8 +313,8 @@ fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize, background_col
     var record = HitRecord{};
     const ctx = HitContext{
         .ray = ray,
-        .trange = math.Interval(Real){ 
-            .min = ray_correction_factor, 
+        .trange = math.Interval(Real){
+            .min = ray_correction_factor,
             .max = std.math.inf(Real),
         },
     };
@@ -332,31 +325,30 @@ fn rayColor(entity: *const Entity, ray: *const Ray, depth: usize, background_col
     }
 
     var ray_scattered: Ray = undefined;
-    var attenuation_color = Color{1, 1, 1};
-    var ctx_scatter = ScatterContext{ 
-        .random = rng.getThreadRng(), 
-        .ray_incoming = ray, 
-        .hit_record = &record, 
+    var attenuation_color = Color{ 1, 1, 1 };
+    var ctx_scatter = ScatterContext{
+        .random = rng.getThreadRng(),
+        .ray_incoming = ray,
+        .hit_record = &record,
 
         .mut = .{
             .ray_scattered = &ray_scattered,
-            .attenuation = &attenuation_color, 
+            .attenuation = &attenuation_color,
         },
     };
 
     var emission_color = background_color;
-    var scatter_color = Color{0, 0, 0};
+    var scatter_color = Color{ 0, 0, 0 };
     if (record.material) |material| {
         // Emissive light sources.
-        emission_color = material.emitted(record.tex_uv, &record.point);        
+        emission_color = material.emitted(record.tex_uv, &record.point);
 
         // Surface scattering.
         // Updates: hit_record, ray_scattered, attenuation
         if (!material.scatter(&ctx_scatter)) {
             return emission_color;
         }
-        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color)
-            * attenuation_color;
+        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color) * attenuation_color;
     }
 
     return emission_color + scatter_color;
