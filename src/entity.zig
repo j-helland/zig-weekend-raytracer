@@ -29,10 +29,13 @@ pub const IEntity = union(enum) {
     quad: QuadEntity,
     collection: EntityCollection,
     bvh_node: BVHNodeEntity,
+    translate: Translate,
 
     pub fn deinit(self: *Self) void {
         switch (self.*) {
-            inline else => |*e| e.deinit(),
+            inline else => |*e| 
+                if (std.meta.hasMethod(@TypeOf(e.*), "deinit")) 
+                    e.deinit(),
         }
     }
 
@@ -46,6 +49,40 @@ pub const IEntity = union(enum) {
         return switch (self.*) {
             inline else => |*e| &e.aabb,
         };
+    }
+};
+
+pub const Translate = struct {
+    const Self = @This();
+
+    offset: Vec3,
+    entity: *const IEntity,
+    aabb: AABB,
+
+    pub fn transform(entity: *const IEntity, offset: Vec3) IEntity {
+        return IEntity{ .translate = Self{ 
+            .offset = offset, 
+            .entity = entity,
+            .aabb = entity.boundingBox().offset(offset),
+        }};
+    }
+
+    pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
+        // Offset ray backwards
+        var ray_trans = ctx.ray.*;
+        ray_trans.origin -= self.offset;
+
+        var ctx_trans = ctx.*;
+        ctx_trans.ray = &ray_trans;
+
+        if (!self.entity.hit(&ctx_trans, hit_record)) {
+            return false;
+        }
+
+        // Offset hit point forwards to account for inital ray offset.
+        hit_record.point += self.offset;
+
+        return true;
     }
 };
 
@@ -101,9 +138,6 @@ pub const BVHNodeEntity = struct {
 
         return self;
     }
-
-    /// noop to satisfy interface
-    pub fn deinit(_: *const Self) void {}
 
     pub fn initEntity(allocator: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !IEntity {
         return IEntity{ .bvh_node = try init(allocator, entities, start, end) };
@@ -227,9 +261,6 @@ pub const QuadEntity = struct {
     material: *const IMaterial,
     aabb: AABB,
 
-    /// noop to satisfy interface
-    pub fn deinit(_: *const Self) void {}
-
     pub fn initEntity(start: Point3, axis1: Vec3, axis2: Vec3, material: *const IMaterial) IEntity {
         // Calculate the plane containing this quad.
         const normal = math.cross(axis1, axis2);
@@ -298,9 +329,6 @@ pub const SphereEntity = struct {
 
     b_is_moving: bool = false,
     movement_direction: Vec3 = .{ 0, 0, 0 },
-
-    /// noop to satisfy interface
-    pub fn deinit(_: *const Self) void {}
 
     pub fn initEntity(center: Point3, radius: Real, material: *const IMaterial) IEntity {
         const rvec = math.vec3s(radius);

@@ -29,6 +29,10 @@ pub fn Interval(comptime T: type) type {
             };
         }
 
+        pub fn offset(self: *const Self, displacement: T) Self {
+            return Self{ .min = self.min + displacement, .max = self.max + displacement };
+        }
+
         pub inline fn size(self: *const Self) T {
             return self.max - self.min;
         }
@@ -77,6 +81,14 @@ pub const AABB = struct {
             .x = self.x.unionWith(other.x),
             .y = self.y.unionWith(other.y),
             .z = self.z.unionWith(other.z),
+        };
+    }
+
+    pub fn offset(self: *const Self, displacement: Vec3) Self {
+        return Self{
+            .x = self.x.offset(displacement[0]),
+            .y = self.y.offset(displacement[1]),
+            .z = self.z.offset(displacement[2]),
         };
     }
 
@@ -167,15 +179,6 @@ test "vec3s" {
     try std.testing.expectEqual(Vec3{1, 1, 1}, vec3s(1));
 }
 
-// pub inline fn cross(u: Vec3, v: Vec3) Vec3 {
-//     var xmm0 = swizzle(u, .y, .z, .x);
-//     var xmm1 = swizzle(v, .z, .x, .y);
-//     var result = xmm0 * xmm1;
-//     xmm0 = swizzle(xmm0, .y, .z, .x);
-//     xmm1 = swizzle(xmm1, .z, .x, .y);
-//     result -= xmm0 * xmm1;
-//     return result;
-// }
 pub inline fn cross(u: Vec3, v: Vec3) Vec3 {
     return Vec3{
         u[1]*v[2] - u[2]*v[1],
