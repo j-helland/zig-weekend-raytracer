@@ -2,6 +2,8 @@ const std = @import("std");
  
 const ztracy = @import("ztracy");
 
+const Ray = @import("ray.zig").Ray;
+
 pub const Real = f64;
 pub const Vec3 = @Vector(3, Real);
 pub const Vec2 = @Vector(2, Real);
@@ -12,18 +14,6 @@ pub const GAMMA = 2.2;
 pub const INV_GAMMA = 1.0 / GAMMA;
 
 pub const Axis = enum(u2) { x, y, z };
-
-pub const Ray = struct {
-    const Self = @This();
-
-    origin: Vec3,
-    direction: Vec3,
-    time: Real = 0.0,
-
-    pub fn at(self: *const Self, t: Real) Vec3 {
-        return self.origin + vec3s(t) * self.direction;
-    }
-};
 
 pub fn Interval(comptime T: type) type {
     return struct {

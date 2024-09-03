@@ -8,16 +8,19 @@ const Real = math.Real;
 const Vec3 = math.Vec3;
 const Color = math.Vec3;
 const Point3 = math.Vec3;
-const Ray = math.Ray;
+
+const Ray            = @import("ray.zig").Ray;
+const HitRecord      = @import("ray.zig").HitRecord;
+const HitContext     = @import("ray.zig").HitContext;
+const ScatterContext = @import("ray.zig").ScatterContext;
 
 const ent = @import("entity.zig");
 const Entity = ent.Entity;
-const HitRecord = ent.HitRecord;
-const HitContext = ent.HitContext;
-const Material = ent.Material;
-const MetalMaterial = ent.MetalMaterial;
-const LambertiaMaterial = ent.LambertianMaterial;
-const ScatterContext = ent.ScatterContext;
+
+const mat = @import("material.zig");
+const Material = mat.Material;
+const MetalMaterial = mat.MetalMaterial;
+const LambertiaMaterial = mat.LambertianMaterial;
 
 const rng = @import("rng.zig");
 
