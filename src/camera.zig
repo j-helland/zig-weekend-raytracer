@@ -9,6 +9,8 @@ const Vec3 = math.Vec3;
 const Color = math.Vec3;
 const Point3 = math.Vec3;
 
+const Interval = @import("interval.zig").Interval;
+
 const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("ray.zig").HitRecord;
 const HitContext = @import("ray.zig").HitContext;
@@ -213,7 +215,7 @@ const RenderThreadContext = struct {
     // Rendering surface parameters.
     // These define a range that each thread can operate on without race conditions.
     row_idx: usize,
-    col_range: math.Interval(usize),
+    col_range: Interval(usize),
     num_cols: usize,
 
     // Contains scene to raytrace.
@@ -235,19 +237,6 @@ const RenderThreadContext = struct {
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
 };
-
-fn encodeColor(_color: Color) [3]u8 {
-    const rgb_max = 256.0;
-    const intensity = math.Interval(Real){ .min = 0.0, .max = 0.999 };
-
-    const color = math.gammaCorrection(_color);
-
-    const ir = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[0])));
-    const ig = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[1])));
-    const ib = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[2])));
-
-    return .{ ir, ig, ib };
-}
 
 /// Raytraces a pixel line and writes the result into the framebuffer.
 /// Wrapper around rayColor function for use in multithreaded.
@@ -313,7 +302,7 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
     var record = HitRecord{};
     const ctx = HitContext{
         .ray = ray,
-        .trange = math.Interval(Real){
+        .trange = Interval(Real){
             .min = ray_correction_factor,
             .max = std.math.inf(Real),
         },

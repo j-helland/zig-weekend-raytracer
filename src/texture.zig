@@ -7,6 +7,9 @@ const Color = math.Vec3;
 const Point = math.Vec3;
 const Vec2 = math.Vec2;
 
+const Interval = @import("interval.zig").Interval;
+const INTERVAL_01 = @import("interval.zig").INTERVAL_01;
+
 const img = @import("image.zig");
 
 const DEBUG_IMAGE = img.Image{};
@@ -44,9 +47,8 @@ pub const ImageTexture = struct {
             return pixelToColor(DEBUG_IMAGE.getPixel(0, 0));
         }
 
-        const int = math.Interval(math.Real){ .min = 0, .max = 1 };
-        const u = int.clamp(uv[0]);
-        const v = 1.0 - int.clamp(uv[1]); // flip to image coordinates
+        const u = INTERVAL_01.clamp(uv[0]);
+        const v = 1.0 - INTERVAL_01.clamp(uv[1]); // flip to image coordinates
 
         const fwidth = @as(math.Real, @floatFromInt(self.image.getWidth()));
         const fheight = @as(math.Real, @floatFromInt(self.image.getHeight()));

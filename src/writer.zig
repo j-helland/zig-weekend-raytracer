@@ -3,6 +3,8 @@ const std = @import("std");
 const math = @import("math.zig");
 const Real = math.Real;
 const Color = math.Vec3;
+
+const Interval = @import("interval.zig").Interval;
  
 const mmap = @import("mmap.zig");
 
@@ -70,7 +72,7 @@ fn writeChunk(ctx: WriterThreadContext) void {
 
 fn encodeColor(_color: Color) [3]u8 {
     const rgb_max = 256.0;
-    const intensity = math.Interval(Real){ .min = 0.0, .max = 0.999 };
+    const intensity = Interval(Real){ .min = 0.0, .max = 0.999 };
 
     const color = math.gammaCorrection(_color);
 

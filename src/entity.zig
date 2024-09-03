@@ -10,9 +10,9 @@ const Vec2 = math.Vec2;
 const Point3 = Vec3;
 const Color = Vec3;
 const vec3s = math.vec3s;
-const Interval = math.Interval;
-const Ray = math.Ray;
-const AABB = math.AABB;
+
+const Interval = @import("interval.zig").Interval;
+const AABB = @import("aabb.zig").AABB;
 
 const ITexture = @import("texture.zig").ITexture;
 const IMaterial = @import("material.zig").IMaterial;

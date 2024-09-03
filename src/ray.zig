@@ -6,7 +6,8 @@ const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
 const Point3 = math.Vec3;
 const Color = math.Vec3;
-const Interval = math.Interval;
+
+const Interval = @import("interval.zig").Interval;
 
 const mat = @import("material.zig");
 
