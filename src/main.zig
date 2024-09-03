@@ -452,6 +452,87 @@ fn emissive(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: 
     timer.logInfoElapsed("scene written to file");
 }
 
+fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+    // ---- textures ----
+    const texture_red = tex.SolidColorTexture.initTexture(Color{0.65, 0.05, 0.05});
+    const texture_white = tex.SolidColorTexture.initTexture(Color{0.73, 0.73, 0.73});
+    const texture_green = tex.SolidColorTexture.initTexture(Color{0.12, 0.45, 0.15});
+    const texture_light = tex.SolidColorTexture.initTexture(Color{15, 15, 15});
+
+    // ---- materials ----
+    const material_red = LambertianMaterial.initMaterial(&texture_red);
+    const material_white = LambertianMaterial.initMaterial(&texture_white);
+    const material_green = LambertianMaterial.initMaterial(&texture_green);
+    const material_light = DiffuseLightEmissiveMaterial.initMaterial(&texture_light);
+
+    // ---- entities ----
+    var scene = EntityCollection.init(allocator);
+    defer scene.deinit();
+    try scene.entities.ensureTotalCapacity(8);
+
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{555, 0, 0}, Vec3{0, 555, 0}, Vec3{0, 0, 555}, &material_green));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 0}, Vec3{0, 555, 0}, Vec3{0, 0, 555}, &material_red));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 0}, Vec3{555, 0, 0}, Vec3{0, 0, 555}, &material_white));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{555, 555, 555}, Vec3{-555, 0, 0}, Vec3{0, 0, -555}, &material_white));
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 555}, Vec3{555, 0, 0}, Vec3{0, 555, 0}, &material_white));
+
+    scene.addAssumeCapacity(try ent.createBoxEntity(allocator, Point3{130, 0, 65}, Point3{295, 165, 230}, &material_white));
+    scene.addAssumeCapacity(try ent.createBoxEntity(allocator, Point3{265, 0, 295}, Point3{430, 330, 460}, &material_white));
+
+    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{343, 554, 332}, Vec3{-130, 0, 0}, Vec3{0, 0, -105}, &material_light));
+
+    // Use the following for BVH-tree (accelerated) rendering.
+    var entity_refs = try std.ArrayList(*Entity).initCapacity(allocator, scene.entities.items.len);
+    defer entity_refs.deinit();
+    for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
+
+    var mem_pool = std.heap.MemoryPool(Entity).init(std.heap.page_allocator);
+    defer mem_pool.deinit();
+    var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
+
+    // const world = Entity{ .collection = scene };
+
+    // ---- camera ----
+    const aspect = 1.0;
+    const fov_vertical = 40.0;
+    const look_from = Point3{278, 278, -800};
+    const look_at = Point3{278, 278, 0};
+    const view_up = Vec3{0, 1, 0};
+    const focus_dist = 10.0;
+    const defocus_angle = 0.0;
+    var camera = Camera.init(
+        thread_pool,
+        aspect,
+        args.image_width,
+        fov_vertical,
+        look_from,
+        look_at,
+        view_up,
+        focus_dist,
+        defocus_angle,
+    );
+    camera.background_color = Color{0, 0, 0};
+    camera.samples_per_pixel = args.samples_per_pixel;
+    camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
+
+    // ---- render ----
+    var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, args.image_width);
+    defer framebuffer.deinit();
+    timer.logInfoElapsed("renderer initialized");
+
+    try camera.render(&world, &framebuffer);
+    timer.logInfoElapsed("scene rendered");
+
+    // ---- write ----
+    std.log.debug("Writing image...", .{});
+    var writer = WriterPPM{
+        .allocator = allocator,
+        .thread_pool = thread_pool,
+    };
+    try writer.write(args.image_out_path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
+    timer.logInfoElapsed("scene written to file");
+}
+
 pub fn main() !void {
     // ---- allocator ----
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -486,5 +567,6 @@ pub fn main() !void {
     // try checkeredSpheres(allocator, &thread_pool, &timer, args);
     // try earth(allocator, &thread_pool, &timer, args);
     // try quads(allocator, &thread_pool, &timer, args);
-    try emissive(allocator, &thread_pool, &timer, args);
+    // try emissive(allocator, &thread_pool, &timer, args);
+    try cornellBox(allocator, &thread_pool, &timer, args);
 }

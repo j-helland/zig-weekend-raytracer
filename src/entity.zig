@@ -181,6 +181,37 @@ pub const EntityCollection = struct {
     }
 };
 
+pub fn createBoxEntity(allocator: std.mem.Allocator, point_a: Point3, point_b: Point3, material: *const Material) !Entity {
+    var sides = EntityCollection.init(allocator);
+    try sides.entities.ensureTotalCapacity(6);
+
+    // two opposite vertices with min/max coords
+    const min = Point3{
+        @min(point_a[0], point_b[0]),
+        @min(point_a[1], point_b[1]),
+        @min(point_a[2], point_b[2]),
+    };
+    const max = Point3{
+        @max(point_a[0], point_b[0]),
+        @max(point_a[1], point_b[1]),
+        @max(point_a[2], point_b[2]),
+    };
+
+    const diff = max - min;
+    const dx = Vec3{diff[0], 0, 0};
+    const dy = Vec3{0, diff[1], 0};
+    const dz = Vec3{0, 0, diff[2]};
+
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], min[1], max[2]}, dx, dy, material));  // front
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{max[0], min[1], max[2]}, -dz, dy, material)); // right
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{max[0], min[1], min[2]}, -dx, dy, material)); // back
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], min[1], min[2]}, dz, dy, material));  // left
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], max[1], max[2]}, dx, -dz, material)); // top
+    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{min[0], min[1], min[2]}, dx, dz, material)); // bottom
+
+    return Entity{ .collection = sides };
+}
+
 pub const QuadEntity = struct {
     const Self = @This();
 
