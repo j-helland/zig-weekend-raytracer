@@ -4,6 +4,8 @@ const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Point3 = math.Vec3;
 
+const Interval = @import("interval.zig").Interval;
+
 threadlocal var g_RNG: ?std.Random.DefaultPrng = null;
 
 /// Thread-safe retrieval of random number generator. Works by implicitly creating a threadlocal singleton RNG. 
@@ -41,7 +43,7 @@ pub fn sampleVec3(rng: std.Random) Vec3 {
     };
 }
 
-pub fn sampleVec3Interval(rng: std.Random, int: math.Interval(math.Real)) Vec3 {
+pub fn sampleVec3Interval(rng: std.Random, int: Interval(math.Real)) Vec3 {
     return Vec3{
         rng.float(math.Real) * int.size() + int.min,
         rng.float(math.Real) * int.size() + int.min,
@@ -52,7 +54,7 @@ pub fn sampleVec3Interval(rng: std.Random, int: math.Interval(math.Real)) Vec3 {
 test "sampleVec3Interval" {
     var rng = try createRng(@intCast(std.testing.random_seed));
     for (0..128) |_| {
-        const int = math.Interval(math.Real){ .min = 1.5, .max = 2.25 };
+        const int = Interval(math.Real){ .min = 1.5, .max = 2.25 };
         const v = sampleVec3Interval(rng.random(), int);
         try std.testing.expect(int.min <= v[0] and v[0] <= int.max);
         try std.testing.expect(int.min <= v[1] and v[1] <= int.max);

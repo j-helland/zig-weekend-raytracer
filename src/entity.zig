@@ -62,12 +62,18 @@ pub const Translate = struct {
     entity: *IEntity,
     aabb: AABB,
 
-    pub fn initEntity(offset: Vec3, entity: *IEntity) IEntity {
-        return IEntity{ .translate = Self{ 
+    pub fn initEntity(
+        entity_pool: *std.heap.MemoryPool(IEntity),
+        offset: Vec3, 
+        entity_to_transform: *IEntity,
+    ) !*IEntity {
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ .translate = Self{ 
             .offset = offset, 
-            .entity = entity,
-            .aabb = entity.boundingBox().offset(offset),
+            .entity = entity_to_transform,
+            .aabb = entity_to_transform.boundingBox().offset(offset),
         }};
+        return entity;
     }
 
     pub fn deinit(self: *Self) void {
@@ -101,11 +107,15 @@ pub const RotateY = struct {
     entity: *IEntity,
     aabb: AABB,
 
-    pub fn initEntity(angle_degrees: Real, entity: *IEntity) IEntity {
+    pub fn initEntity(
+        entity_pool: *std.heap.MemoryPool(IEntity),
+        angle_degrees: Real, 
+        entity_to_transform: *IEntity,
+    ) !*IEntity {
         const theta = std.math.degreesToRadians(angle_degrees);
         const sin_theta = @sin(theta);
         const cos_theta = @cos(theta);
-        const bbox = entity.boundingBox();
+        const bbox = entity_to_transform.boundingBox();
 
         var min = math.vec3s(std.math.inf(Real));
         var max = math.vec3s(-std.math.inf(Real));
@@ -134,12 +144,14 @@ pub const RotateY = struct {
             }
         }
 
-        return IEntity{ .rotate_y = Self{ 
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ .rotate_y = Self{ 
             .sin_theta = sin_theta,
             .cos_theta = cos_theta,
-            .entity = entity,
+            .entity = entity_to_transform,
             .aabb = AABB.init(min, max),
         }};
+        return entity;
     }
 
     pub fn deinit(self: *Self) void {
@@ -203,7 +215,7 @@ pub const BVHNodeEntity = struct {
     right: ?*IEntity,
     aabb: AABB,
 
-    pub fn init(allocator: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !Self {
+    pub fn init(entity_pool: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !Self {
         var self: BVHNodeEntity = undefined;
 
         // Populate left/right children.
@@ -226,11 +238,11 @@ pub const BVHNodeEntity = struct {
             std.sort.pdq(*IEntity, entities[start..end], BoxCmpContext{ .axis = axis }, boxCmp);
             const mid = start + span / 2;
 
-            self.left = try allocator.create();
-            self.left.?.* = IEntity{ .bvh_node = try Self.init(allocator, entities, start, mid) };
+            self.left = try entity_pool.create();
+            self.left.?.* = IEntity{ .bvh_node = try Self.init(entity_pool, entities, start, mid) };
 
-            self.right = try allocator.create();
-            self.right.?.* = IEntity{ .bvh_node = try Self.init(allocator, entities, mid, end) };
+            self.right = try entity_pool.create();
+            self.right.?.* = IEntity{ .bvh_node = try Self.init(entity_pool, entities, mid, end) };
         }
 
         self.aabb = self.left.?.boundingBox().unionWith(self.right.?.boundingBox());
@@ -238,13 +250,12 @@ pub const BVHNodeEntity = struct {
         return self;
     }
 
-    pub fn initEntity(allocator: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !IEntity {
-        return IEntity{ .bvh_node = try init(allocator, entities, start, end) };
-    }
-
-    pub fn deinit(self: *Self) void {
-        if (self.left) |left| left.deinit();
-        if (self.right) |right| right.deinit();
+    pub fn initEntity(entity_pool: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !*IEntity {
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ 
+            .bvh_node = try init(entity_pool, entities, start, end), 
+        };
+        return entity;
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
@@ -270,38 +281,52 @@ pub const BVHNodeEntity = struct {
 pub const EntityCollection = struct {
     const Self = @This();
 
-    entities: std.ArrayList(IEntity),
+    entities: std.ArrayList(*IEntity),
     aabb: AABB = .{},
+    bvh_root: ?*IEntity = null,
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        return .{ .entities = std.ArrayList(IEntity).init(allocator) };
+        return .{ .entities = std.ArrayList(*IEntity).init(allocator) };
+    }
+
+    pub fn initEntity(entity_pool: *std.heap.MemoryPool(IEntity), allocator: std.mem.Allocator) !*IEntity {
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ .collection = Self.init(allocator) };
+        return entity;
     }
 
     pub fn deinit(self: *Self) void {
-        for (self.entities.items) |*e| e.deinit();
+        for (self.entities.items) |e| e.deinit();
         self.entities.deinit();
     }
 
-    pub fn add(self: *Self, entity: IEntity) AllocatorError!void {
+    pub fn add(self: *Self, entity: *IEntity) AllocatorError!void {
         try self.entities.append(entity);
         self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
 
-    pub fn addAssumeCapacity(self: *Self, entity: IEntity) void {
+    pub fn addAssumeCapacity(self: *Self, entity: *IEntity) void {
         self.entities.appendAssumeCapacity(entity);
         self.aabb = self.aabb.unionWith(entity.boundingBox());
+    }
+
+    pub fn createBvhTree(self: *Self, entity_pool: *std.heap.MemoryPool(IEntity)) !void {
+        self.bvh_root = try BVHNodeEntity.initEntity(entity_pool, self.entities.items, 0, self.entities.items.len);
     }
 
     pub fn hit(self: *const Self, _ctx: *const HitContext, hit_record: *HitRecord) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "EntityCollection::hit");
         defer tracy_zone.End();
 
+        // Prefer BVH hierarchy if one exists.
+        if (self.bvh_root) |bvh| return bvh.hit(_ctx, hit_record);
+
         var ctx = _ctx.*;
         var hit_record_tmp = HitRecord{};
         var b_hit_anything = false;
         var closest_t = ctx.trange.max;
 
-        for (self.entities.items) |*entity| {
+        for (self.entities.items) |entity| {
             if (entity.hit(&ctx, &hit_record_tmp)) {
                 b_hit_anything = true;
                 closest_t = hit_record_tmp.t;
@@ -317,9 +342,15 @@ pub const EntityCollection = struct {
 };
 
 /// composite of quads arranged in a box; contained in EntityCollection
-pub fn createBoxEntity(allocator: std.mem.Allocator, point_a: Point3, point_b: Point3, material: *const IMaterial) !IEntity {
-    var sides = EntityCollection.init(allocator);
-    try sides.entities.ensureTotalCapacity(6);
+pub fn createBoxEntity(
+    allocator: std.mem.Allocator, 
+    entity_pool: *std.heap.MemoryPool(IEntity), 
+    point_a: Point3, 
+    point_b: Point3, 
+    material: *const IMaterial,
+) !*IEntity {
+    var sides = try EntityCollection.initEntity(entity_pool, allocator);
+    try sides.collection.entities.ensureTotalCapacity(6);
 
     // two opposite vertices with min/max coords
     const min = Point3{
@@ -338,14 +369,23 @@ pub fn createBoxEntity(allocator: std.mem.Allocator, point_a: Point3, point_b: P
     const dy = Vec3{ 0, diff[1], 0 };
     const dz = Vec3{ 0, 0, diff[2] };
 
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], min[1], max[2] }, dx, dy, material)); // front
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ max[0], min[1], max[2] }, -dz, dy, material)); // right
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ max[0], min[1], min[2] }, -dx, dy, material)); // back
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], min[1], min[2] }, dz, dy, material)); // left
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], max[1], max[2] }, dx, -dz, material)); // top
-    sides.addAssumeCapacity(QuadEntity.initEntity(Point3{ min[0], min[1], min[2] }, dx, dz, material)); // bottom
+    const init_data = [_][3]Point3{
+        .{ .{ min[0], min[1], max[2] },  dx,  dy }, // front
+        .{ .{ max[0], min[1], max[2] }, -dz,  dy }, // right
+        .{ .{ max[0], min[1], min[2] }, -dx,  dy }, // back
+        .{ .{ min[0], min[1], min[2] },  dz,  dy }, // left
+        .{ .{ min[0], max[1], max[2] },  dx, -dz }, // top
+        .{ .{ min[0], min[1], min[2] },  dx,  dz }, // bottom
+    };
+    for (init_data) |data| {
+        const p0 = data[0];
+        const u = data[1];
+        const v = data[2];
+        sides.collection.addAssumeCapacity(
+            try QuadEntity.initEntity(entity_pool, p0, u, v, material));
+    }
 
-    return IEntity{ .collection = sides };
+    return sides;
 }
 
 pub const QuadEntity = struct {
@@ -365,7 +405,13 @@ pub const QuadEntity = struct {
     material: *const IMaterial,
     aabb: AABB,
 
-    pub fn initEntity(start: Point3, axis1: Vec3, axis2: Vec3, material: *const IMaterial) IEntity {
+    pub fn initEntity(
+        entity_pool: *std.heap.MemoryPool(IEntity),
+        start: Point3, 
+        axis1: Vec3, 
+        axis2: Vec3, 
+        material: *const IMaterial,
+    ) !*IEntity {
         // Calculate the plane containing this quad.
         const normal = math.cross(axis1, axis2);
         const axis3 = normal / math.vec3s(math.dot(normal, normal));
@@ -377,7 +423,8 @@ pub const QuadEntity = struct {
         const bbox_diag2 = AABB.init(start + axis1, start + axis2);
         const bbox = bbox_diag1.unionWith(&bbox_diag2);
 
-        return IEntity{ .quad = Self{
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ .quad = Self{
             .start_point = start,
             .axis1 = axis1,
             .axis2 = axis2,
@@ -388,7 +435,8 @@ pub const QuadEntity = struct {
 
             .material = material,
             .aabb = bbox,
-        } };
+        }};
+        return entity;
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
@@ -434,21 +482,35 @@ pub const SphereEntity = struct {
     b_is_moving: bool = false,
     movement_direction: Vec3 = .{ 0, 0, 0 },
 
-    pub fn initEntity(center: Point3, radius: Real, material: *const IMaterial) IEntity {
+    pub fn initEntity(
+        entity_pool: *std.heap.MemoryPool(IEntity), 
+        center: Point3, 
+        radius: Real, 
+        material: *const IMaterial,
+    ) !*IEntity {
         const rvec = math.vec3s(radius);
 
-        return IEntity{ .sphere = Self{
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ .sphere = Self{
             .center = center,
             .radius = radius,
             .material = material,
             .aabb = AABB.init(center - rvec, center + rvec),
-        } };
+        }};
+        return entity;
     }
 
-    pub fn initEntityAnimated(center_start: Point3, center_end: Point3, radius: Real, material: *const IMaterial) IEntity {
+    pub fn initEntityAnimated(
+        entity_pool: *std.heap.MemoryPool(IEntity), 
+        center_start: Point3, 
+        center_end: Point3, 
+        radius: Real, 
+        material: *const IMaterial,
+    ) !*IEntity {
         const rvec = math.vec3s(radius);
 
-        return IEntity{ .sphere = Self{
+        const entity = try entity_pool.create();
+        entity.* = IEntity{ .sphere = Self{
             .center = center_start,
             .radius = radius,
             .material = material,
@@ -456,8 +518,9 @@ pub const SphereEntity = struct {
             .movement_direction = center_end - center_start,
             .aabb = AABB
                 .init(center_start - rvec, center_start + rvec)
-                .unionWith(AABB.init(center_end - rvec, center_end + rvec)),
-        } };
+                .unionWith(&AABB.init(center_end - rvec, center_end + rvec)),
+        }};
+        return entity;
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {

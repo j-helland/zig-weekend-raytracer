@@ -12,20 +12,27 @@ const Color = math.Vec3;
 const vec3s = math.vec3s;
 const Interval = math.Interval;
 
-const IMaterial = @import("material.zig").Material;
+const IMaterial = @import("material.zig").IMaterial;
 const MetalMaterial = @import("material.zig").MetalMaterial;
 const LambertianMaterial = @import("material.zig").LambertianMaterial;
 const DielectricMaterial = @import("material.zig").DielectricMaterial;
 const DiffuseLightEmissiveMaterial = @import("material.zig").DiffuseLightEmissiveMaterial;
+
+const tex = @import("texture.zig");
+const ITexture = @import("texture.zig").ITexture;
+const ImageTexture = @import("texture.zig").ImageTexture;
+const SolidColorTexture = @import("texture.zig").SolidColorTexture;
+const CheckerboardTexture = @import("texture.zig").CheckerboardTexture;
 
 const ent = @import("entity.zig");
 const IEntity = ent.IEntity;
 const EntityCollection = ent.EntityCollection;
 const SphereEntity = ent.SphereEntity;
 const QuadEntity = ent.QuadEntity;
+const RotateY = ent.RotateY;
+const Translate = ent.Translate;
 
 const img = @import("image.zig");
-const tex = @import("texture.zig");
 const rng = @import("rng.zig");
 const cam = @import("camera.zig");
 const Camera = cam.Camera;
@@ -45,7 +52,7 @@ const UserArgs = struct {
     ray_bounce_max_depth: usize = 20,
 };
 
-fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
     const texture_solid_brown = tex.SolidColorTexture.initTexture(Color{ 0.4, 0.2, 0.1 });
     const texture_even = tex.SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
@@ -53,13 +60,11 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     const texture_ground = tex.CheckerboardTexture.initTexture(0.32, &texture_even, &texture_odd);
 
     // ---- materials ----
-    // Use scene.deinit() to manage lifetime of all entities. We'll keep these in a contiguous memory block.
-    // Any acceleration structures will be built on top of this block and managed separately.
-    var scene = EntityCollection.init(allocator);
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
-    try scene.entities.ensureTotalCapacity(22 * 22 + 4);
+    try scene.collection.entities.ensureTotalCapacity(22 * 22 + 4);
 
-    var textures = std.ArrayList(tex.Texture).init(allocator);
+    var textures = std.ArrayList(ITexture).init(allocator);
     defer textures.deinit();
     try textures.ensureTotalCapacity(22 * 22);
 
@@ -68,7 +73,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     try materials.ensureTotalCapacity(22 * 22);
 
     const material_ground = LambertianMaterial.initMaterial(&texture_ground);
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{ 0, -1000, 0 }, 1000, &material_ground));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, -1000, 0 }, 1000, &material_ground));
 
     if (@import("builtin").mode != .Debug) {
         // This many entities is way too slow in debug builds.
@@ -88,26 +93,32 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
                         textures.appendAssumeCapacity(tex.SolidColorTexture.initTexture(albedo));
                         materials.appendAssumeCapacity(LambertianMaterial.initMaterial(&textures.items[textures.items.len - 1]));
 
-                        // Non-motion blurred entities.
-                        // try scene.add(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        // // Non-motion blurred entities.
+                        // try scene.collection.add(try SphereEntity.initEntity(
+                        //     &entity_pool, center, 0.2, &materials.items[materials.items.len - 1]));
 
                         // Motion blurred entities.
-                        scene.addAssumeCapacity(SphereEntity.initEntityAnimated(
+                        scene.collection.addAssumeCapacity(try SphereEntity.initEntityAnimated(
+                            entity_pool,
                             center,
                             center + Point3{ 0, rand.float(Real) * 0.5, 0 },
                             0.2,
                             &materials.items[materials.items.len - 1],
                         ));
+
                     } else if (choose_mat < 0.95) {
                         // metal
                         const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
                         const fuzz = rand.float(Real) * 0.8;
                         materials.appendAssumeCapacity(MetalMaterial.initMaterial(albedo, fuzz));
-                        scene.addAssumeCapacity(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        scene.collection.addAssumeCapacity(try SphereEntity.initEntity(
+                            entity_pool, center, 0.2, &materials.items[materials.items.len - 1]));
+
                     } else {
                         // glass
                         materials.appendAssumeCapacity(DielectricMaterial.initMaterial(1.5));
-                        scene.addAssumeCapacity(SphereEntity.initEntity(center, 0.2, &materials.items[materials.items.len - 1]));
+                        scene.collection.addAssumeCapacity(try SphereEntity.initEntity(
+                            entity_pool, center, 0.2, &materials.items[materials.items.len - 1]));
                     }
                 }
             }
@@ -115,25 +126,15 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     }
 
     const material1 = DielectricMaterial.initMaterial(1.5);
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{ 0, 1, 0 }, 1.0, &material1));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, 1, 0 }, 1.0, &material1));
 
     const material2 = LambertianMaterial.initMaterial(&texture_solid_brown);
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{ -4, 1, 0 }, 1, &material2));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ -4, 1, 0 }, 1, &material2));
 
     const material3 = MetalMaterial.initMaterial(Color{ 0.7, 0.6, 0.5 }, 0.0);
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{ 4, 1, 0 }, 1, &material3));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 4, 1, 0 }, 1, &material3));
 
-    var entity_refs = try std.ArrayList(*IEntity).initCapacity(allocator, scene.entities.items.len);
-    defer entity_refs.deinit();
-    for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
-
-    // Use the following for BVH-tree (accelerated) rendering.
-    var mem_pool = std.heap.MemoryPool(IEntity).init(std.heap.page_allocator);
-    defer mem_pool.deinit();
-    var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
-
-    // // Use the following for non-BVH tree (slow) rendering
-    // var world = Entity{ .collection = scene };
+    try scene.collection.createBvhTree(entity_pool);
 
     timer.logInfoElapsed("scene setup");
 
@@ -156,7 +157,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{0.5, 0.7, 1.0};
+    camera.background_color = Color{ 0.5, 0.7, 1.0 };
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -165,7 +166,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
-    try camera.render(&world, &framebuffer);
+    try camera.render(scene, &framebuffer);
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -178,7 +179,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, thr
     timer.logInfoElapsed("scene written to file");
 }
 
-fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+fn checkeredSpheres(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
     const texture_even = tex.SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
     const texture_odd = tex.SolidColorTexture.initTexture(Color{ 0.9, 0.9, 0.9 });
@@ -188,13 +189,11 @@ fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool,
     const material = LambertianMaterial.initMaterial(&texture_checker);
 
     // ---- entities ----
-    var scene = EntityCollection.init(allocator);
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
 
-    try scene.add(SphereEntity.initEntity(Point3{ 0, -10, 0 }, 10, &material));
-    try scene.add(SphereEntity.initEntity(Point3{ 0, 10, 0 }, 10, &material));
-
-    const world = IEntity{ .collection = scene };
+    try scene.collection.add(try SphereEntity.initEntity(entity_pool, Point3{ 0, -10, 0 }, 10, &material));
+    try scene.collection.add(try SphereEntity.initEntity(entity_pool, Point3{ 0, 10, 0 }, 10, &material));
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
@@ -215,7 +214,7 @@ fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool,
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{0.5, 0.7, 1.0};
+    camera.background_color = Color{ 0.5, 0.7, 1.0 };
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -224,7 +223,7 @@ fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool,
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
-    try camera.render(&world, &framebuffer);
+    try camera.render(scene, &framebuffer);
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -237,27 +236,20 @@ fn checkeredSpheres(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool,
     timer.logInfoElapsed("scene written to file");
 }
 
-fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+fn earth(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
     const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "earth.png";
-    // const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "wap.jpg";
-    // const earth_image_path: [:0]const u8 = @import("build_options").asset_dir ++ "me.jpg";
     var earth_image = try img.Image.initFromFile(earth_image_path);
     defer earth_image.deinit();
-    std.log.debug("w:{d}, h:{d}", .{ earth_image.image.?.width, earth_image.image.?.height });
-
-    const texture_earth = tex.ImageTexture.initTexture(&earth_image);
 
     // ---- materials ----
-    const material = LambertianMaterial.initMaterial(&texture_earth);
+    const material = LambertianMaterial.initMaterial(&ImageTexture.initTexture(&earth_image));
 
     // ---- entities ----
-    var scene = EntityCollection.init(allocator);
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
 
-    try scene.add(SphereEntity.initEntity(Point3{ 0, 0, 0 }, 1.5, &material));
-
-    const world = IEntity{ .collection = scene };
+    try scene.collection.add(try SphereEntity.initEntity(entity_pool, Point3{ 0, 0, 0 }, 1.5, &material));
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
@@ -278,7 +270,7 @@ fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{0.5, 0.7, 1.0};
+    camera.background_color = Color{ 0.5, 0.7, 1.0 };
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -287,7 +279,7 @@ fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
-    try camera.render(&world, &framebuffer);
+    try camera.render(scene, &framebuffer);
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -300,28 +292,15 @@ fn earth(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     timer.logInfoElapsed("scene written to file");
 }
 
-fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+fn quads(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    // const texture_red = tex.SolidColorTexture.initTexture(Color{1, 0.2, 0.2});
-    // const texture_green = tex.SolidColorTexture.initTexture(Color{0.2, 1, 0.2});
-    // const texture_blue = tex.SolidColorTexture.initTexture(Color{0.2, 0.2, 1});
-    // const texture_orange = tex.SolidColorTexture.initTexture(Color{1.0, 0.5, 0});
-    // const texture_teal = tex.SolidColorTexture.initTexture(Color{0.2, 0.8, 0.8});
-
-    // const image_path: [:0]const u8 = @import("build_options").asset_dir ++ "me.jpg";
     const image_path: [:0]const u8 = @import("build_options").asset_dir ++ "wap.jpg";
     var image = try img.Image.initFromFile(image_path);
     defer image.deinit();
 
-    const texture_image = tex.ImageTexture.initTexture(&image);
+    const texture_image = ImageTexture.initTexture(&image);
 
     // ---- materials ----
-    // const material_left = LambertianMaterial.initMaterial(&texture_red);
-    // const material_back = LambertianMaterial.initMaterial(&texture_green);
-    // const material_right = LambertianMaterial.initMaterial(&texture_blue);
-    // const material_top = LambertianMaterial.initMaterial(&texture_orange);
-    // const material_bottom = LambertianMaterial.initMaterial(&texture_teal);
-
     const material_left = LambertianMaterial.initMaterial(&texture_image);
     const material_back = LambertianMaterial.initMaterial(&texture_image);
     const material_right = LambertianMaterial.initMaterial(&texture_image);
@@ -329,17 +308,15 @@ fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     const material_bottom = LambertianMaterial.initMaterial(&texture_image);
 
     // ---- entities ----
-    var scene = EntityCollection.init(allocator);
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
-    try scene.entities.ensureTotalCapacity(5);
+    try scene.collection.entities.ensureTotalCapacity(5);
 
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ -3, -2, 5 }, Vec3{ 0, 0, -4 }, Vec3{ 0, 4, 0 }, &material_left));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ -2, -2, 0 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 4, 0 }, &material_right));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ 3, -2, 1 }, Vec3{ 0, 0, 4 }, Vec3{ 0, 4, 0 }, &material_back));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ -2, 3, 1 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, 4 }, &material_top));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{ -2, -3, 5 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, -4 }, &material_bottom));
-
-    const world = IEntity{ .collection = scene };
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -3, -2, 5 }, Vec3{ 0, 0, -4 }, Vec3{ 0, 4, 0 }, &material_left));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -2, -2, 0 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 4, 0 }, &material_right));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 3, -2, 1 }, Vec3{ 0, 0, 4 }, Vec3{ 0, 4, 0 }, &material_back));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -2, 3, 1 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, 4 }, &material_top));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -2, -3, 5 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, -4 }, &material_bottom));
 
     // ---- camera ----
     const aspect = 1.0; //16.0 / 9.0;
@@ -360,7 +337,7 @@ fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{0.5, 0.7, 1.0};
+    camera.background_color = Color{ 0.5, 0.7, 1.0 };
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -369,7 +346,7 @@ fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
-    try camera.render(&world, &framebuffer);
+    try camera.render(scene, &framebuffer);
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -382,41 +359,36 @@ fn quads(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Ti
     timer.logInfoElapsed("scene written to file");
 }
 
-fn emissive(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+fn emissive(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    // const texture_sphere = tex.SolidColorTexture.initTexture(Color{1.0, 0.5, 0});
-    const texture_even = tex.SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
-    const texture_odd = tex.SolidColorTexture.initTexture(Color{ 0.9, 0.9, 0.9 });
-    const texture_ground = tex.CheckerboardTexture.initTexture(0.32, &texture_even, &texture_odd);
-    // const texture_ground = tex.SolidColorTexture.initTexture(Color{0.8, 0.8, 0.8});
-    const texture_light = tex.SolidColorTexture.initTexture(Color{4, 4, 4});
+    const texture_even = SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
+    const texture_odd = SolidColorTexture.initTexture(Color{ 0.9, 0.9, 0.9 });
+    const texture_ground = CheckerboardTexture.initTexture(0.32, &texture_even, &texture_odd);
+    const texture_light = SolidColorTexture.initTexture(Color{ 4, 4, 4 });
 
     // ---- materials ----
-    // const material_sphere = LambertianMaterial.initMaterial(&texture_sphere);
     const material_glass = DielectricMaterial.initMaterial(1.5);
     const material_ground = LambertianMaterial.initMaterial(&texture_ground);
     const material_light = DiffuseLightEmissiveMaterial.initMaterial(&texture_light);
 
     // ---- entities ----
-    var scene = EntityCollection.init(allocator);
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
-    try scene.entities.ensureTotalCapacity(5);
+    try scene.collection.entities.ensureTotalCapacity(5);
 
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, -1000, 0}, 1000, &material_ground));
-    // scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, 2, 0}, 2, &material_sphere));
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, 2, 0}, 1.5, &material_glass));
-    // light sources
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{3, 1, -2}, Vec3{2, 0, 0}, Vec3{0, 2, 0}, &material_light));
-    scene.addAssumeCapacity(SphereEntity.initEntity(Point3{0, 7, 0}, 1, &material_light));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, -1000, 0 }, 1000, &material_ground));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, 2, 0 }, 1.5, &material_glass));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 3, 1, -2 }, Vec3{ 2, 0, 0 }, Vec3{ 0, 2, 0 }, &material_light));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, 7, 0 }, 1, &material_light));
 
-    const world = IEntity{ .collection = scene };
+    try scene.collection.createBvhTree(entity_pool);
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
-    const look_from = Point3{26, 3, 6};
-    const look_at = Point3{0, 2, 0};
-    const view_up = Vec3{0, 1, 0};
+    const look_from = Point3{ 26, 3, 6 };
+    const look_at = Point3{ 0, 2, 0 };
+    const view_up = Vec3{ 0, 1, 0 };
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -430,7 +402,7 @@ fn emissive(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: 
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{0, 0, 0};
+    camera.background_color = Color{ 0, 0, 0 };
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -439,7 +411,7 @@ fn emissive(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: 
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
-    try camera.render(&world, &framebuffer);
+    try camera.render(scene, &framebuffer);
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -452,12 +424,12 @@ fn emissive(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: 
     timer.logInfoElapsed("scene written to file");
 }
 
-fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+fn cornellBox(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    const texture_red = tex.SolidColorTexture.initTexture(Color{0.65, 0.05, 0.05});
-    const texture_white = tex.SolidColorTexture.initTexture(Color{0.73, 0.73, 0.73});
-    const texture_green = tex.SolidColorTexture.initTexture(Color{0.12, 0.45, 0.15});
-    const texture_light = tex.SolidColorTexture.initTexture(Color{15, 15, 15});
+    const texture_red = SolidColorTexture.initTexture(Color{ 0.65, 0.05, 0.05 });
+    const texture_white = SolidColorTexture.initTexture(Color{ 0.73, 0.73, 0.73 });
+    const texture_green = SolidColorTexture.initTexture(Color{ 0.12, 0.45, 0.15 });
+    const texture_light = SolidColorTexture.initTexture(Color{ 15, 15, 15 });
 
     // ---- materials ----
     const material_red = LambertianMaterial.initMaterial(&texture_red);
@@ -466,41 +438,37 @@ fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer
     const material_light = DiffuseLightEmissiveMaterial.initMaterial(&texture_light);
 
     // ---- entities ----
-    var scene = EntityCollection.init(allocator);
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
-    try scene.entities.ensureTotalCapacity(8);
+    try scene.collection.entities.ensureTotalCapacity(8);
 
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{555, 0, 0}, Vec3{0, 555, 0}, Vec3{0, 0, 555}, &material_green));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 0}, Vec3{0, 555, 0}, Vec3{0, 0, 555}, &material_red));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 0}, Vec3{555, 0, 0}, Vec3{0, 0, 555}, &material_white));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{555, 555, 555}, Vec3{-555, 0, 0}, Vec3{0, 0, -555}, &material_white));
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 555}, Vec3{555, 0, 0}, Vec3{0, 555, 0}, &material_white));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 555, 0, 0 }, Vec3{ 0, 555, 0 }, Vec3{ 0, 0, 555 }, &material_green));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 0, 0, 0 }, Vec3{ 0, 555, 0 }, Vec3{ 0, 0, 555 }, &material_red));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 0, 0, 0 }, Vec3{ 555, 0, 0 }, Vec3{ 0, 0, 555 }, &material_white));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 555, 555, 555 }, Vec3{ -555, 0, 0 }, Vec3{ 0, 0, -555 }, &material_white));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 0, 0, 555 }, Vec3{ 555, 0, 0 }, Vec3{ 0, 555, 0 }, &material_white));
 
-    var box1 = try ent.createBoxEntity(allocator, Point3{0, 0, 0}, Point3{165, 165, 165}, &material_white);
-    var br1 = ent.RotateY.initEntity(-18.0, &box1);
-    scene.addAssumeCapacity(ent.Translate.initEntity(Vec3{130, 0, 65}, &br1));
+    const box1 = try Translate.initEntity(entity_pool, Vec3{130, 0, 65}, 
+        try RotateY.initEntity(entity_pool, -18.0, 
+            try ent.createBoxEntity(allocator, entity_pool, Point3{ 0, 0, 0 }, Point3{ 165, 165, 165 }, &material_white)));
+    scene.collection.addAssumeCapacity(box1);
 
-    var box2 = try ent.createBoxEntity(allocator, Point3{0, 0, 0}, Point3{165, 330, 165}, &material_white);
-    var br2 = ent.RotateY.initEntity(15.0, &box2);
-    scene.addAssumeCapacity(ent.Translate.initEntity(Vec3{265, 0, 295}, &br2));
+    const box2 = try Translate.initEntity(entity_pool, Vec3{265, 0, 295},
+        try RotateY.initEntity(entity_pool, 15.0, 
+            try ent.createBoxEntity(allocator, entity_pool, Point3{ 0, 0, 0 }, Point3{ 165, 330, 165 }, &material_white)));
+    scene.collection.addAssumeCapacity(box2);
 
-    scene.addAssumeCapacity(QuadEntity.initEntity(Point3{343, 554, 332}, Vec3{-130, 0, 0}, Vec3{0, 0, -105}, &material_light));
+    // light
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 343, 554, 332 }, Vec3{ -130, 0, 0 }, Vec3{ 0, 0, -105 }, &material_light));
 
-    // Use the following for BVH-tree (accelerated) rendering.
-    var entity_refs = try std.ArrayList(*IEntity).initCapacity(allocator, scene.entities.items.len);
-    defer entity_refs.deinit();
-    for (scene.entities.items) |*e| entity_refs.appendAssumeCapacity(e);
-
-    var mem_pool = std.heap.MemoryPool(IEntity).init(std.heap.page_allocator);
-    defer mem_pool.deinit();
-    var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
+    try scene.collection.createBvhTree(entity_pool);
 
     // ---- camera ----
     const aspect = 1.0;
     const fov_vertical = 40.0;
-    const look_from = Point3{278, 278, -800};
-    const look_at = Point3{278, 278, 0};
-    const view_up = Vec3{0, 1, 0};
+    const look_from = Point3{ 278, 278, -800 };
+    const look_at = Point3{ 278, 278, 0 };
+    const view_up = Vec3{ 0, 1, 0 };
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -514,7 +482,7 @@ fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{0, 0, 0};
+    camera.background_color = Color{ 0, 0, 0 };
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -523,7 +491,84 @@ fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer
     defer framebuffer.deinit();
     timer.logInfoElapsed("renderer initialized");
 
-    try camera.render(&world, &framebuffer);
+    try camera.render(scene, &framebuffer);
+    timer.logInfoElapsed("scene rendered");
+
+    // ---- write ----
+    std.log.debug("Writing image...", .{});
+    var writer = WriterPPM{
+        .allocator = allocator,
+        .thread_pool = thread_pool,
+    };
+    try writer.write(args.image_out_path, framebuffer.buffer, framebuffer.num_cols, framebuffer.num_rows);
+    timer.logInfoElapsed("scene written to file");
+}
+
+fn finalScene(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
+    var rand = rng.getThreadRng();
+
+    var scene = try EntityCollection.initEntity(entity_pool, allocator);
+    defer scene.deinit();
+
+    // ---- ground ----
+    const material_ground = LambertianMaterial.initMaterial(&SolidColorTexture.initTexture(Color{ 0.4, 0.83, 0.53 }));
+
+    var ground_boxes = try EntityCollection.initEntity(entity_pool, allocator);
+    try scene.collection.add(ground_boxes);
+
+    const num_boxes_per_side = 20;
+    for (0..num_boxes_per_side) |i| {
+        const fi = @as(Real, @floatFromInt(i));
+
+        for (0..num_boxes_per_side) |j| {
+            const fj = @as(Real, @floatFromInt(j));
+
+            const w = 100.0;
+            const x0 = -1000.0 + fi * w;
+            const y0 = 0.0;
+            const z0 = -1000.0 + fj * w;
+            const x1 = x0 + w;
+            const y1 = rand.float(Real) * 100.0 + 1.0;
+            const z1 = z0 + w;
+
+            try ground_boxes.collection.add(try ent.createBoxEntity(allocator, entity_pool, Point3{ x0, y0, z0 }, Point3{ x1, y1, z1 }, &material_ground));
+        }
+    }
+
+    // acceleration structures
+    try ground_boxes.collection.createBvhTree(entity_pool);
+    try scene.collection.createBvhTree(entity_pool);
+
+    // ---- camera ----
+    const aspect = 1.0;
+    const fov_vertical = 40.0;
+    const look_from = Point3{ 478, 278, -600 };
+    const look_at = Point3{ 278, 278, 0 };
+    const view_up = Vec3{ 0, 1, 0 };
+    const focus_dist = 10.0;
+    const defocus_angle = 0.0;
+    var camera = Camera.init(
+        thread_pool,
+        aspect,
+        args.image_width,
+        fov_vertical,
+        look_from,
+        look_at,
+        view_up,
+        focus_dist,
+        defocus_angle,
+    );
+    // camera.background_color = Color{0, 0, 0};
+    camera.background_color = Color{ 1, 1, 1 };
+    camera.samples_per_pixel = args.samples_per_pixel;
+    camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
+
+    // ---- render ----
+    var framebuffer = try cam.Framebuffer.init(allocator, camera.image_height, args.image_width);
+    defer framebuffer.deinit();
+    timer.logInfoElapsed("renderer initialized");
+
+    try camera.render(scene, &framebuffer);
     timer.logInfoElapsed("scene rendered");
 
     // ---- write ----
@@ -541,6 +586,9 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    var entity_pool = std.heap.MemoryPool(IEntity).init(std.heap.page_allocator);
+    defer entity_pool.deinit();
 
     // parse args
     var parser = try ArgParser(UserArgs).init(allocator);
@@ -566,10 +614,11 @@ pub fn main() !void {
     defer zstbi.deinit();
 
     // Scene
-    // try bigBountifulBodaciousBeautifulBouncingBalls(allocator, &thread_pool, &timer, args);
-    // try checkeredSpheres(allocator, &thread_pool, &timer, args);
-    // try earth(allocator, &thread_pool, &timer, args);
-    // try quads(allocator, &thread_pool, &timer, args);
-    // try emissive(allocator, &thread_pool, &timer, args);
-    try cornellBox(allocator, &thread_pool, &timer, args);
+    // try bigBountifulBodaciousBeautifulBouncingBalls(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try checkeredSpheres(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try earth(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try quads(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try emissive(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try cornellBox(allocator, &entity_pool, &thread_pool, &timer, args);
+    try finalScene(allocator, &entity_pool, &thread_pool, &timer, args);
 }
