@@ -9,8 +9,9 @@ const Real = math.Real;
 const Vec3 = math.Vec3;
 const Point3 = math.Vec3;
 const Color = math.Vec3;
-const vec3s = math.vec3s;
 const Interval = math.Interval;
+const vec3 = math.vec3;
+const vec3s = math.vec3s;
 
 const IMaterial = @import("material.zig").IMaterial;
 const MetalMaterial = @import("material.zig").MetalMaterial;
@@ -54,9 +55,9 @@ const UserArgs = struct {
 
 fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    const texture_solid_brown = tex.SolidColorTexture.initTexture(Color{ 0.4, 0.2, 0.1 });
-    const texture_even = tex.SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
-    const texture_odd = tex.SolidColorTexture.initTexture(Color{ 0.9, 0.9, 0.9 });
+    const texture_solid_brown = tex.SolidColorTexture.initTexture(vec3( 0.4, 0.2, 0.1 ));
+    const texture_even = tex.SolidColorTexture.initTexture(vec3( 0.2, 0.3, 0.1 ));
+    const texture_odd = tex.SolidColorTexture.initTexture(vec3( 0.9, 0.9, 0.9 ));
     const texture_ground = tex.CheckerboardTexture.initTexture(0.32, &texture_even, &texture_odd);
 
     // ---- materials ----
@@ -73,7 +74,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
     try materials.ensureTotalCapacity(22 * 22);
 
     const material_ground = LambertianMaterial.initMaterial(&texture_ground);
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, -1000, 0 }, 1000, &material_ground));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( 0, -1000, 0 ), 1000, &material_ground));
 
     if (@import("builtin").mode != .Debug) {
         // This many entities is way too slow in debug builds.
@@ -84,9 +85,9 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
             var b: Real = -11.0;
             while (b < 11.0) : (b += 1.0) {
                 const choose_mat = rand.float(Real);
-                const center = Point3{ a + 0.9 * rand.float(Real), 0.2, b + 0.9 * rand.float(Real) };
+                const center = vec3( a + 0.9 * rand.float(Real), 0.2, b + 0.9 * rand.float(Real) );
 
-                if (math.length(center - Point3{ 4, 0.2, 0 }) > 0.9) {
+                if (math.length(center - vec3( 4, 0.2, 0 )) > 0.9) {
                     if (choose_mat < 0.8) {
                         // diffuse
                         const albedo = rng.sampleVec3(rand);
@@ -101,7 +102,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
                         scene.collection.addAssumeCapacity(try SphereEntity.initEntityAnimated(
                             entity_pool,
                             center,
-                            center + Point3{ 0, rand.float(Real) * 0.5, 0 },
+                            center + vec3( 0, rand.float(Real) * 0.5, 0 ),
                             0.2,
                             &materials.items[materials.items.len - 1],
                         ));
@@ -126,13 +127,13 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
     }
 
     const material1 = DielectricMaterial.initMaterial(1.5);
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, 1, 0 }, 1.0, &material1));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( 0, 1, 0 ), 1.0, &material1));
 
     const material2 = LambertianMaterial.initMaterial(&texture_solid_brown);
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ -4, 1, 0 }, 1, &material2));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( -4, 1, 0 ), 1, &material2));
 
-    const material3 = MetalMaterial.initMaterial(Color{ 0.7, 0.6, 0.5 }, 0.0);
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 4, 1, 0 }, 1, &material3));
+    const material3 = MetalMaterial.initMaterial(vec3( 0.7, 0.6, 0.5 ), 0.0);
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( 4, 1, 0 ), 1, &material3));
 
     try scene.collection.createBvhTree(entity_pool);
 
@@ -141,9 +142,9 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
     // camera
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
-    const look_from = Point3{ 13, 2, 3 };
-    const look_at = Point3{ 0, 0, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 13, 2, 3 );
+    const look_at = vec3( 0, 0, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.6;
     var camera = Camera.init(
@@ -157,7 +158,7 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{ 0.5, 0.7, 1.0 };
+    camera.background_color = vec3( 0.5, 0.7, 1.0 );
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -181,8 +182,8 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(allocator: std.mem.Allocator, ent
 
 fn checkeredSpheres(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    const texture_even = tex.SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
-    const texture_odd = tex.SolidColorTexture.initTexture(Color{ 0.9, 0.9, 0.9 });
+    const texture_even = tex.SolidColorTexture.initTexture(vec3( 0.2, 0.3, 0.1 ));
+    const texture_odd = tex.SolidColorTexture.initTexture(vec3( 0.9, 0.9, 0.9 ));
     const texture_checker = tex.CheckerboardTexture.initTexture(2.32, &texture_even, &texture_odd);
 
     // ---- materials ----
@@ -192,15 +193,15 @@ fn checkeredSpheres(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryP
     var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
 
-    try scene.collection.add(try SphereEntity.initEntity(entity_pool, Point3{ 0, -10, 0 }, 10, &material));
-    try scene.collection.add(try SphereEntity.initEntity(entity_pool, Point3{ 0, 10, 0 }, 10, &material));
+    try scene.collection.add(try SphereEntity.initEntity(entity_pool, vec3( 0, -10, 0 ), 10, &material));
+    try scene.collection.add(try SphereEntity.initEntity(entity_pool, vec3( 0, 10, 0 ), 10, &material));
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
-    const look_from = Point3{ 13, 2, 3 };
-    const look_at = Point3{ 0, 0, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 13, 2, 3 );
+    const look_at = vec3( 0, 0, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -214,7 +215,7 @@ fn checkeredSpheres(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryP
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{ 0.5, 0.7, 1.0 };
+    camera.background_color = vec3( 0.5, 0.7, 1.0 );
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -249,14 +250,14 @@ fn earth(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity
     var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
 
-    try scene.collection.add(try SphereEntity.initEntity(entity_pool, Point3{ 0, 0, 0 }, 1.5, &material));
+    try scene.collection.add(try SphereEntity.initEntity(entity_pool, vec3( 0, 0, 0 ), 1.5, &material));
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
-    const look_from = Point3{ 0, 0, 12 };
-    const look_at = Point3{ 0, 0, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 0, 0, 12 );
+    const look_at = vec3( 0, 0, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -270,7 +271,7 @@ fn earth(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{ 0.5, 0.7, 1.0 };
+    camera.background_color = vec3( 0.5, 0.7, 1.0 );
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -312,18 +313,18 @@ fn quads(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity
     defer scene.deinit();
     try scene.collection.entities.ensureTotalCapacity(5);
 
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -3, -2, 5 }, Vec3{ 0, 0, -4 }, Vec3{ 0, 4, 0 }, &material_left));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -2, -2, 0 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 4, 0 }, &material_right));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 3, -2, 1 }, Vec3{ 0, 0, 4 }, Vec3{ 0, 4, 0 }, &material_back));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -2, 3, 1 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, 4 }, &material_top));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ -2, -3, 5 }, Vec3{ 4, 0, 0 }, Vec3{ 0, 0, -4 }, &material_bottom));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( -3, -2, 5 ), vec3( 0, 0, -4 ), vec3( 0, 4, 0 ), &material_left));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( -2, -2, 0 ), vec3( 4, 0, 0 ), vec3( 0, 4, 0 ), &material_right));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 3, -2, 1 ), vec3( 0, 0, 4 ), vec3( 0, 4, 0 ), &material_back));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( -2, 3, 1 ), vec3( 4, 0, 0 ), vec3( 0, 0, 4 ), &material_top));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( -2, -3, 5 ), vec3( 4, 0, 0 ), vec3( 0, 0, -4 ), &material_bottom));
 
     // ---- camera ----
     const aspect = 1.0; //16.0 / 9.0;
     const fov_vertical = 80.0;
-    const look_from = Point3{ 0, 0, 9 };
-    const look_at = Point3{ 0, 0, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 0, 0, 9 );
+    const look_at = vec3( 0, 0, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -337,7 +338,7 @@ fn quads(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{ 0.5, 0.7, 1.0 };
+    camera.background_color = vec3( 0.5, 0.7, 1.0 );
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -361,10 +362,10 @@ fn quads(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity
 
 fn emissive(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    const texture_even = SolidColorTexture.initTexture(Color{ 0.2, 0.3, 0.1 });
-    const texture_odd = SolidColorTexture.initTexture(Color{ 0.9, 0.9, 0.9 });
+    const texture_even = SolidColorTexture.initTexture(vec3( 0.2, 0.3, 0.1 ));
+    const texture_odd = SolidColorTexture.initTexture(vec3( 0.9, 0.9, 0.9 ));
     const texture_ground = CheckerboardTexture.initTexture(0.32, &texture_even, &texture_odd);
-    const texture_light = SolidColorTexture.initTexture(Color{ 4, 4, 4 });
+    const texture_light = SolidColorTexture.initTexture(vec3( 4, 4, 4 ));
 
     // ---- materials ----
     const material_glass = DielectricMaterial.initMaterial(1.5);
@@ -376,19 +377,19 @@ fn emissive(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEnt
     defer scene.deinit();
     try scene.collection.entities.ensureTotalCapacity(5);
 
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, -1000, 0 }, 1000, &material_ground));
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, 2, 0 }, 1.5, &material_glass));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 3, 1, -2 }, Vec3{ 2, 0, 0 }, Vec3{ 0, 2, 0 }, &material_light));
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, Point3{ 0, 7, 0 }, 1, &material_light));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( 0, -1000, 0 ), 1000, &material_ground));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( 0, 2, 0 ), 1.5, &material_glass));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 3, 1, -2 ), vec3( 2, 0, 0 ), vec3( 0, 2, 0 ), &material_light));
+    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(entity_pool, vec3( 0, 7, 0 ), 1, &material_light));
 
     try scene.collection.createBvhTree(entity_pool);
 
     // ---- camera ----
     const aspect = 16.0 / 9.0;
     const fov_vertical = 20.0;
-    const look_from = Point3{ 26, 3, 6 };
-    const look_at = Point3{ 0, 2, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 26, 3, 6 );
+    const look_at = vec3( 0, 2, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -402,7 +403,7 @@ fn emissive(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEnt
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{ 0, 0, 0 };
+    camera.background_color = vec3( 0, 0, 0 );
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -426,10 +427,10 @@ fn emissive(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEnt
 
 fn cornellBox(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IEntity), thread_pool: *std.Thread.Pool, timer: *Timer, args: *const UserArgs) !void {
     // ---- textures ----
-    const texture_red = SolidColorTexture.initTexture(Color{ 0.65, 0.05, 0.05 });
-    const texture_white = SolidColorTexture.initTexture(Color{ 0.73, 0.73, 0.73 });
-    const texture_green = SolidColorTexture.initTexture(Color{ 0.12, 0.45, 0.15 });
-    const texture_light = SolidColorTexture.initTexture(Color{ 15, 15, 15 });
+    const texture_red = SolidColorTexture.initTexture(vec3( 0.65, 0.05, 0.05 ));
+    const texture_white = SolidColorTexture.initTexture(vec3( 0.73, 0.73, 0.73 ));
+    const texture_green = SolidColorTexture.initTexture(vec3( 0.12, 0.45, 0.15 ));
+    const texture_light = SolidColorTexture.initTexture(vec3( 15, 15, 15 ));
 
     // ---- materials ----
     const material_red = LambertianMaterial.initMaterial(&texture_red);
@@ -442,33 +443,33 @@ fn cornellBox(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
     defer scene.deinit();
     try scene.collection.entities.ensureTotalCapacity(8);
 
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 555, 0, 0 }, Vec3{ 0, 555, 0 }, Vec3{ 0, 0, 555 }, &material_green));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 0, 0, 0 }, Vec3{ 0, 555, 0 }, Vec3{ 0, 0, 555 }, &material_red));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 0, 0, 0 }, Vec3{ 555, 0, 0 }, Vec3{ 0, 0, 555 }, &material_white));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 555, 555, 555 }, Vec3{ -555, 0, 0 }, Vec3{ 0, 0, -555 }, &material_white));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 0, 0, 555 }, Vec3{ 555, 0, 0 }, Vec3{ 0, 555, 0 }, &material_white));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 555, 0, 0 ), vec3( 0, 555, 0 ), vec3( 0, 0, 555 ), &material_green));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 0, 0, 0 ), vec3( 0, 555, 0 ), vec3( 0, 0, 555 ), &material_red));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 0, 0, 0 ), vec3( 555, 0, 0 ), vec3( 0, 0, 555 ), &material_white));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 555, 555, 555 ), vec3( -555, 0, 0 ), vec3( 0, 0, -555 ), &material_white));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 0, 0, 555 ), vec3( 555, 0, 0 ), vec3( 0, 555, 0 ), &material_white));
 
-    const box1 = try Translate.initEntity(entity_pool, Vec3{130, 0, 65}, 
+    const box1 = try Translate.initEntity(entity_pool, vec3(130, 0, 65), 
         try RotateY.initEntity(entity_pool, -18.0, 
-            try ent.createBoxEntity(allocator, entity_pool, Point3{ 0, 0, 0 }, Point3{ 165, 165, 165 }, &material_white)));
+            try ent.createBoxEntity(allocator, entity_pool, vec3( 0, 0, 0 ), vec3( 165, 165, 165 ), &material_white)));
     scene.collection.addAssumeCapacity(box1);
 
-    const box2 = try Translate.initEntity(entity_pool, Vec3{265, 0, 295},
+    const box2 = try Translate.initEntity(entity_pool, vec3(265, 0, 295),
         try RotateY.initEntity(entity_pool, 15.0, 
-            try ent.createBoxEntity(allocator, entity_pool, Point3{ 0, 0, 0 }, Point3{ 165, 330, 165 }, &material_white)));
+            try ent.createBoxEntity(allocator, entity_pool, vec3( 0, 0, 0 ), vec3( 165, 330, 165 ), &material_white)));
     scene.collection.addAssumeCapacity(box2);
 
     // light
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, Point3{ 343, 554, 332 }, Vec3{ -130, 0, 0 }, Vec3{ 0, 0, -105 }, &material_light));
+    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 343, 554, 332 ), vec3( -130, 0, 0 ), vec3( 0, 0, -105 ), &material_light));
 
     try scene.collection.createBvhTree(entity_pool);
 
     // ---- camera ----
     const aspect = 1.0;
     const fov_vertical = 40.0;
-    const look_from = Point3{ 278, 278, -800 };
-    const look_at = Point3{ 278, 278, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 278, 278, -800 );
+    const look_at = vec3( 278, 278, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -482,7 +483,7 @@ fn cornellBox(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
         focus_dist,
         defocus_angle,
     );
-    camera.background_color = Color{ 0, 0, 0 };
+    camera.background_color = vec3( 0, 0, 0 );
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -511,7 +512,7 @@ fn finalScene(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
     defer scene.deinit();
 
     // ---- ground ----
-    const material_ground = LambertianMaterial.initMaterial(&SolidColorTexture.initTexture(Color{ 0.4, 0.83, 0.53 }));
+    const material_ground = LambertianMaterial.initMaterial(&SolidColorTexture.initTexture(vec3( 0.4, 0.83, 0.53 )));
 
     var ground_boxes = try EntityCollection.initEntity(entity_pool, allocator);
     try scene.collection.add(ground_boxes);
@@ -531,20 +532,68 @@ fn finalScene(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
             const y1 = rand.float(Real) * 100.0 + 1.0;
             const z1 = z0 + w;
 
-            try ground_boxes.collection.add(try ent.createBoxEntity(allocator, entity_pool, Point3{ x0, y0, z0 }, Point3{ x1, y1, z1 }, &material_ground));
+            try ground_boxes.collection.add(try ent.createBoxEntity(allocator, entity_pool, vec3( x0, y0, z0 ), vec3( x1, y1, z1 ), &material_ground));
         }
     }
 
-    // acceleration structures
     try ground_boxes.collection.createBvhTree(entity_pool);
+
+    // ---- lights ----
+    const material_light = DiffuseLightEmissiveMaterial.initMaterial(&SolidColorTexture.initTexture(vec3(7, 7, 7)));
+    try scene.collection.add(
+        try QuadEntity.initEntity(entity_pool, vec3(123,554,147), vec3(300, 0, 0), vec3(0, 0, 265), &material_light));
+
+    // ---- spheres ----
+    // glass
+    try scene.collection.add(
+        try SphereEntity.initEntity(entity_pool, vec3(260, 150, 45), 50.0, 
+            &DielectricMaterial.initMaterial(1.5)));
+
+    // metal
+    try scene.collection.add(
+        try SphereEntity.initEntity(entity_pool, vec3(0, 150, 145), 50,
+            &MetalMaterial.initMaterial(vec3(0.8, 0.8, 0.9), 1.0)));
+
+    const boundary = try SphereEntity.initEntity(entity_pool, vec3(360,150,145), 70, 
+        &DielectricMaterial.initMaterial(1.5));
+    try scene.collection.add(boundary);
+
+    const image_path_shrek: [:0]const u8 = @import("build_options").asset_dir ++ "wap.jpg";
+    var image_shrek = try img.Image.initFromFile(image_path_shrek);
+    defer image_shrek.deinit();
+    try scene.collection.add(
+        try SphereEntity.initEntity(entity_pool, vec3(400,200,400), 100, 
+            &LambertianMaterial.initMaterial(&ImageTexture.initTexture(&image_shrek))));
+
+    const image_path: [:0]const u8 = @import("build_options").asset_dir ++ "me.jpg";
+    var image = try img.Image.initFromFile(image_path);
+    defer image.deinit();
+    try scene.collection.add(
+        try SphereEntity.initEntity(entity_pool, vec3(220,280,300), 80, 
+            &LambertianMaterial.initMaterial(&ImageTexture.initTexture(&image))));
+
+    var box_of_balls = try EntityCollection.initEntity(entity_pool, allocator);
+    const material_white = LambertianMaterial.initMaterial(&SolidColorTexture.initTexture(vec3(0.73, 0.73, 0.73)));
+    for (0..1000) |_| {
+        const center = rng.sampleVec3(rand) * vec3s(165.0);
+        try box_of_balls.collection.add(
+            try SphereEntity.initEntity(entity_pool, center, 10, &material_white));
+    }
+    try box_of_balls.collection.createBvhTree(entity_pool);
+
+    try scene.collection.add(
+        try Translate.initEntity(entity_pool, vec3(-100,270,395), 
+            try RotateY.initEntity(entity_pool, 15.0,
+                box_of_balls)));
+
     try scene.collection.createBvhTree(entity_pool);
 
     // ---- camera ----
     const aspect = 1.0;
     const fov_vertical = 40.0;
-    const look_from = Point3{ 478, 278, -600 };
-    const look_at = Point3{ 278, 278, 0 };
-    const view_up = Vec3{ 0, 1, 0 };
+    const look_from = vec3( 478, 278, -600 );
+    const look_at = vec3( 278, 278, 0 );
+    const view_up = vec3( 0, 1, 0 );
     const focus_dist = 10.0;
     const defocus_angle = 0.0;
     var camera = Camera.init(
@@ -558,8 +607,7 @@ fn finalScene(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
         focus_dist,
         defocus_angle,
     );
-    // camera.background_color = Color{0, 0, 0};
-    camera.background_color = Color{ 1, 1, 1 };
+    camera.background_color = vec3(0, 0, 0);
     camera.samples_per_pixel = args.samples_per_pixel;
     camera.max_ray_bounce_depth = args.ray_bounce_max_depth;
 
@@ -604,7 +652,7 @@ pub fn main() !void {
 
     // ---- thread pool ----
     var thread_pool: std.Thread.Pool = undefined;
-    try thread_pool.init(.{ .allocator = allocator, .n_jobs = 32 });
+    try thread_pool.init(.{ .allocator = allocator, .n_jobs = 128 });
     defer thread_pool.deinit();
 
     var timer = Timer.init();
@@ -618,7 +666,7 @@ pub fn main() !void {
     // try checkeredSpheres(allocator, &entity_pool, &thread_pool, &timer, args);
     // try earth(allocator, &entity_pool, &thread_pool, &timer, args);
     // try quads(allocator, &entity_pool, &thread_pool, &timer, args);
-    // try emissive(allocator, &entity_pool, &thread_pool, &timer, args);
+    try emissive(allocator, &entity_pool, &thread_pool, &timer, args);
     // try cornellBox(allocator, &entity_pool, &thread_pool, &timer, args);
-    try finalScene(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try finalScene(allocator, &entity_pool, &thread_pool, &timer, args);
 }

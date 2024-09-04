@@ -6,6 +6,7 @@ const math = @import("math.zig");
 const Color = math.Vec3;
 const Point = math.Vec3;
 const Vec2 = math.Vec2;
+const vec3 = math.vec3;
 
 const Interval = @import("interval.zig").Interval;
 const INTERVAL_01 = @import("interval.zig").INTERVAL_01;
@@ -61,16 +62,12 @@ pub const ImageTexture = struct {
     }
 
     fn pixelToColor(pixel: []const u8) Color {
-        const color_scale = 1.0 / 255.0;
-        return Color{
-            linearizeColorspace(color_scale * @as(math.Real, @floatFromInt(pixel[0]))),
-            linearizeColorspace(color_scale * @as(math.Real, @floatFromInt(pixel[1]))),
-            linearizeColorspace(color_scale * @as(math.Real, @floatFromInt(pixel[2]))),
-        };
-    }
-
-    inline fn linearizeColorspace(x: math.Real) math.Real {
-        return std.math.pow(math.Real, x, math.GAMMA);
+        const color_scale = math.vec3s(1.0 / 255.0);
+        return math.linearizeColorSpace(color_scale * vec3(
+            @as(math.Real, @floatFromInt(pixel[0])),
+            @as(math.Real, @floatFromInt(pixel[1])),
+            @as(math.Real, @floatFromInt(pixel[2])),
+        ));
     }
 };
 

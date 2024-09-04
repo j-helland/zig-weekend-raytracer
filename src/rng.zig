@@ -3,6 +3,7 @@ const std = @import("std");
 const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Point3 = math.Vec3;
+const vec3 = math.vec3;
 
 const Interval = @import("interval.zig").Interval;
 
@@ -36,19 +37,19 @@ pub fn sampleEnum(comptime E: type, rand: std.Random) E {
 }
 
 pub fn sampleVec3(rng: std.Random) Vec3 {
-    return Vec3{ 
+    return vec3(
         rng.float(math.Real), 
         rng.float(math.Real), 
         rng.float(math.Real),
-    };
+    );
 }
 
 pub fn sampleVec3Interval(rng: std.Random, int: Interval(math.Real)) Vec3 {
-    return Vec3{
+    return vec3(
         rng.float(math.Real) * int.size() + int.min,
         rng.float(math.Real) * int.size() + int.min,
         rng.float(math.Real) * int.size() + int.min,
-    };
+    );
 }
 
 test "sampleVec3Interval" {
@@ -64,15 +65,15 @@ test "sampleVec3Interval" {
 
 /// Returns random point in the set [-0.5, 0.5] x [-0.5, 0.5].
 pub fn sampleSquareXY(rng: std.Random) Point3 {
-    return Vec3{
+    return vec3(
         rng.float(math.Real) - 0.5,
         rng.float(math.Real) - 0.5,
         0.0,
-    };
+    );
 }
 
 pub inline fn sampleUnitCircleXY(rng: std.Random) Point3 {
-    return math.normalize(Point3{ rng.floatNorm(math.Real), rng.floatNorm(math.Real), 0 });
+    return math.normalize(vec3( rng.floatNorm(math.Real), rng.floatNorm(math.Real), 0 ));
 }
 
 /// Returns random point in disc of radius centered at (0, 0).
@@ -89,11 +90,11 @@ pub fn sampleUnitBall(rng: std.Random) Point3 {
 /// Returns random point on surface of unit sphere. Direct sampling i.e. no rejection sampling.
 pub fn sampleUnitSphere(rng: std.Random) Point3 {
     // Sample gaussian vector ~ N(0,I) and project it onto the sphere.
-    const p = Point3{ 
+    const p = vec3(
         rng.floatNorm(math.Real), 
         rng.floatNorm(math.Real), 
         rng.floatNorm(math.Real), 
-    };
+    );
     return math.normalize(p);
 }
 

@@ -6,6 +6,8 @@ const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
 const Point3 = math.Vec3;
 const Color = math.Vec3;
+const vec3 = math.vec3;
+const vec2 = math.vec2;
 
 const Interval = @import("interval.zig").Interval;
 
@@ -26,11 +28,11 @@ pub const ScatterContext = struct {
 pub const HitRecord = struct {
     const Self = @This();
 
-    point: Point3 = .{0, 0, 0},
-    normal: Vec3 = .{0, 0, 0},
+    point: Point3 = vec3(0, 0, 0),
+    normal: Vec3 = vec3(0, 0, 0),
     material: ?*const mat.IMaterial = null,
     t: Real = std.math.inf(Real),
-    tex_uv: Vec2 = .{0, 0},
+    tex_uv: Vec2 = vec2(0, 0),
     b_front_face: bool = false,
 
     pub fn setFrontFaceNormal(self: *Self, ray: *const Ray, outward_normal: Vec3) void {

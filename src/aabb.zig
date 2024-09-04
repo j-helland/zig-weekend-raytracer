@@ -64,6 +64,12 @@ pub const AABB = struct {
         const tracy_zone = ztracy.ZoneN(@src(), "AABB::hit");
         defer tracy_zone.End();
 
+        // const it_min = Vec3{ self.x.min, self.y.min, self.z.min };
+        // const it_max = Vec3{ self.x.max, self.y.max, self.z.max };
+
+        // var t0 = (it_min - ray.origin) / ray.direction;
+        // var t1 = (it_max - ray.origin) / ray.direction;
+
         // Check intersection against AABB slabs. 
         inline for (comptime std.enums.values(Axis)) |axis| {
             const axis_idx = @as(u2, @intFromEnum(axis));

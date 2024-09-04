@@ -5,6 +5,7 @@ const ztracy = @import("ztracy");
 
 const math = @import("math.zig");
 const Real = math.Real;
+const vec3 = math.vec3;
 const Vec3 = math.Vec3;
 const Color = math.Vec3;
 const Point3 = math.Vec3;
@@ -57,9 +58,9 @@ pub const Camera = struct {
     const Self = @This();
 
     fov_vertical: Real = 90.0,
-    look_from: Point3 = .{ 0, 0, 0 },
-    look_at: Point3 = .{ 0, 0, -1 },
-    view_up: Vec3 = .{ 0, 1, 0 },
+    look_from: Point3 = vec3( 0, 0, 0 ),
+    look_at: Point3 = vec3( 0, 0, -1 ),
+    view_up: Vec3 = vec3( 0, 1, 0 ),
     basis_u: Vec3,
     basis_v: Vec3,
     basis_w: Vec3,
@@ -72,7 +73,7 @@ pub const Camera = struct {
     pixel_delta_u: Vec3,
     pixel_delta_v: Vec3,
 
-    background_color: Color = .{ 0, 0, 0 },
+    background_color: Color = vec3( 0, 0, 0 ),
 
     defocus_angle: Real = 0,
     focus_dist: Real = 10,
@@ -188,7 +189,7 @@ pub const Camera = struct {
         };
 
         // Similar to GPU 4x4 pixel shading work groups, except that here we use row-major order lines and use bigger chunks due to OS thread overhead.
-        const block_size = 32;
+        const block_size = 16;
 
         // Write pixels into shared image. No need to lock since the image is partitioned into non-overlapping lines.
         for (0..self.image_height) |v| {
@@ -247,7 +248,7 @@ fn rayColorLine(ctx: RenderThreadContext) void {
     const pixel_color_scale = math.vec3s(1.0 / @as(Real, @floatFromInt(ctx.samples_per_pixel)));
 
     for (ctx.col_range.min..ctx.col_range.max) |col_idx| {
-        var color = Vec3{ 0, 0, 0 };
+        var color = vec3(0, 0, 0);
         for (0..ctx.samples_per_pixel) |_| {
             const ray = sampleRay(&ctx, col_idx);
             color += rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
@@ -267,7 +268,7 @@ fn sampleRay(ctx: *const RenderThreadContext, col_idx: usize) Ray {
     // - defocus disk sampling simulates depth of field
     // - sampling randomly around the pixel performs multisample antialiasing
     const offset =
-        if (ctx.samples_per_pixel == 1) Vec3{ 0, 0, 0 } else rng.sampleSquareXY(rand);
+        if (ctx.samples_per_pixel == 1) vec3(0, 0, 0) else rng.sampleSquareXY(rand);
     const sample = ctx.pixel00_loc + ctx.delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0]) + ctx.delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
 
     const origin =
@@ -293,7 +294,7 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
     defer tracy_zone.End();
 
     // Bounce recursion depth exceeded.
-    if (depth == 0) return Color{ 0, 0, 0 };
+    if (depth == 0) return vec3( 0, 0, 0 );
 
     // Correction factor to ignore spurious hits due to floating point precision issues when the ray is very close to the surface.
     // This helps reduce z-fighting / shadow-acne issues.
@@ -314,7 +315,7 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
     }
 
     var ray_scattered: Ray = undefined;
-    var attenuation_color = Color{ 1, 1, 1 };
+    var attenuation_color = vec3( 1, 1, 1 );
     var ctx_scatter = ScatterContext{
         .random = rng.getThreadRng(),
         .ray_incoming = ray,
@@ -327,7 +328,7 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
     };
 
     var emission_color = background_color;
-    var scatter_color = Color{ 0, 0, 0 };
+    var scatter_color = vec3( 0, 0, 0 );
     if (record.material) |material| {
         // Emissive light sources.
         emission_color = material.emitted(record.tex_uv, &record.point);

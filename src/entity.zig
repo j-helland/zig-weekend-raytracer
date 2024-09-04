@@ -8,7 +8,8 @@ const Real = math.Real;
 const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
 const Point3 = Vec3;
-const Color = Vec3;
+const vec3 = math.vec3;
+const vec2 = math.vec2;
 const vec3s = math.vec3s;
 
 const Interval = @import("interval.zig").Interval;
@@ -134,7 +135,7 @@ pub const RotateY = struct {
 
                     const newx = cos_theta * x + sin_theta * z;
                     const newz = -sin_theta * x + cos_theta * z;
-                    const tester = Vec3{newx, y, newz};
+                    const tester = vec3(newx, y, newz);
 
                     for (0..3) |c| {
                         min[c] = @min(min[c], tester[c]);
@@ -181,19 +182,19 @@ pub const RotateY = struct {
     }
 
     inline fn worldToObjectSpace(self: *const Self, v: *const Vec3) Vec3 {
-        return Vec3{
+        return vec3(
             self.cos_theta * v[0] - self.sin_theta * v[2],
             v[1],
             self.sin_theta * v[0] + self.cos_theta * v[2],
-        };
+        );
     }
 
     inline fn objectToWorldSpace(self: *const Self, v: *const Vec3) Vec3 {
-        return Vec3{
+        return vec3(
             self.cos_theta * v[0] + self.sin_theta * v[2],
             v[1],
             -self.sin_theta * v[0] + self.cos_theta * v[2],
-        };
+        );
     }
 };
 
@@ -353,29 +354,31 @@ pub fn createBoxEntity(
     try sides.collection.entities.ensureTotalCapacity(6);
 
     // two opposite vertices with min/max coords
-    const min = Point3{
-        @min(point_a[0], point_b[0]),
-        @min(point_a[1], point_b[1]),
-        @min(point_a[2], point_b[2]),
-    };
-    const max = Point3{
-        @max(point_a[0], point_b[0]),
-        @max(point_a[1], point_b[1]),
-        @max(point_a[2], point_b[2]),
-    };
+    const min = @min(point_a, point_b);
+    // const min = vec3(
+    //     @min(point_a[0], point_b[0]),
+    //     @min(point_a[1], point_b[1]),
+    //     @min(point_a[2], point_b[2]),
+    // );
+    const max = @max(point_a, point_b);
+    // const max = vec3(
+    //     @max(point_a[0], point_b[0]),
+    //     @max(point_a[1], point_b[1]),
+    //     @max(point_a[2], point_b[2]),
+    // );
 
     const diff = max - min;
-    const dx = Vec3{ diff[0], 0, 0 };
-    const dy = Vec3{ 0, diff[1], 0 };
-    const dz = Vec3{ 0, 0, diff[2] };
+    const dx = vec3( diff[0], 0, 0 );
+    const dy = vec3( 0, diff[1], 0 );
+    const dz = vec3( 0, 0, diff[2] );
 
     const init_data = [_][3]Point3{
-        .{ .{ min[0], min[1], max[2] },  dx,  dy }, // front
-        .{ .{ max[0], min[1], max[2] }, -dz,  dy }, // right
-        .{ .{ max[0], min[1], min[2] }, -dx,  dy }, // back
-        .{ .{ min[0], min[1], min[2] },  dz,  dy }, // left
-        .{ .{ min[0], max[1], max[2] },  dx, -dz }, // top
-        .{ .{ min[0], min[1], min[2] },  dx,  dz }, // bottom
+        .{ vec3(min[0], min[1], max[2]),  dx,  dy }, // front
+        .{ vec3(max[0], min[1], max[2]), -dz,  dy }, // right
+        .{ vec3(max[0], min[1], min[2]), -dx,  dy }, // back
+        .{ vec3(min[0], min[1], min[2]),  dz,  dy }, // left
+        .{ vec3(min[0], max[1], max[2]),  dx, -dz }, // top
+        .{ vec3(min[0], min[1], min[2]),  dx,  dz }, // bottom
     };
     for (init_data) |data| {
         const p0 = data[0];
@@ -460,7 +463,7 @@ pub const QuadEntity = struct {
         hit_record.point = hit_point;
         hit_record.material = self.material;
         hit_record.setFrontFaceNormal(ctx.ray, self.normal);
-        hit_record.tex_uv = Vec2{ alpha, beta };
+        hit_record.tex_uv = vec2(alpha, beta);
 
         return true;
     }
@@ -480,7 +483,7 @@ pub const SphereEntity = struct {
     aabb: AABB,
 
     b_is_moving: bool = false,
-    movement_direction: Vec3 = .{ 0, 0, 0 },
+    movement_direction: Vec3 = vec3(0, 0, 0),
 
     pub fn initEntity(
         entity_pool: *std.heap.MemoryPool(IEntity), 
@@ -569,9 +572,9 @@ pub const SphereEntity = struct {
     fn getSphereUv(v: *const Vec3) Vec2 {
         const theta = std.math.acos(-v[1]);
         const phi = std.math.atan2(-v[2], v[0]) + std.math.pi;
-        return Vec2{
+        return vec2(
             phi / (2 * std.math.pi),
             theta / std.math.pi,
-        };
+        );
     }
 };

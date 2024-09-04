@@ -13,6 +13,7 @@ const Real = math.Real;
 const Vec2 = math.Vec2;
 const Point3 = math.Vec3;
 const Color = math.Vec3;
+const vec3 = math.vec3;
 
 const rng = @import("rng.zig");
 
@@ -34,7 +35,7 @@ pub const IMaterial = union(enum) {
                 m.emitted(uv, point)
             else
                 // Default no light emitted.
-                Color{ 0, 0, 0 },
+                vec3( 0, 0, 0 ),
         };
     }
 
