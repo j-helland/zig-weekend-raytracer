@@ -4,6 +4,7 @@ const ztracy = @import("ztracy");
 
 const Ray = @import("ray.zig").Ray;
 
+/// Always pick a power of two for @Vector sizes.
 fn suggestVectorSize(comptime T: type, min: usize) usize {
     const min2 = try std.math.ceilPowerOfTwo(usize, min);
     const suggested = std.simd.suggestVectorLength(T) orelse min2;
@@ -15,13 +16,19 @@ fn Vec(comptime T: type, size: comptime_int) type {
 
 pub const Real = f64;
 pub const Vec3 = Vec(Real, 3);
-    //@Vector(3, Real);
 pub const Vec2 = Vec(Real, 2);
-    //@Vector(2, Real);
 pub const Vecx = Vec(Real, 4);
 
-pub const Axis = enum(u2) { x, y, z };
+pub const Axis = enum(u2) { 
 
+    x, y, z,
+
+    pub inline fn select(self: Axis, v: anytype) Real {
+        return v[@intFromEnum(self)];
+    }
+};
+
+/// Create a Vec3 filled with a scalar value. 
 pub inline fn vec3s(x: Real) Vec3 {
     return @splat(x);
 }
@@ -29,18 +36,19 @@ test "vec3s" {
     try expectVecEqual(vec3(1, 1, 1), vec3s(1));
 }
 
+/// Create a Vec3 type populated with specified values.
 pub inline fn vec3(x: Real, y: Real, z: Real) Vec3 {
     var v: Vec3 = undefined;
-    v[0] = x;
-    v[1] = y;
-    v[2] = z;
+    v[@intFromEnum(Axis.x)] = x;
+    v[@intFromEnum(Axis.y)] = y;
+    v[@intFromEnum(Axis.z)] = z;
     return v;
 }
 
 pub inline fn vec2(x: Real, y: Real) Vec2 {
     var v: Vec2 = undefined;
-    v[0] = x;
-    v[1] = y;
+    v[@intFromEnum(Axis.x)] = x;
+    v[@intFromEnum(Axis.y)] = y;
     return v;
 }
 
@@ -93,9 +101,9 @@ pub inline fn swizzle(
 ) Vec3 {
     const mask = comptime blk: {
         var m = createMask(Vec3);
-        m[0] = @intFromEnum(x);
-        m[1] = @intFromEnum(y);
-        m[2] = @intFromEnum(z);
+        m[@intFromEnum(Axis.x)] = @intFromEnum(x);
+        m[@intFromEnum(Axis.y)] = @intFromEnum(y);
+        m[@intFromEnum(Axis.z)] = @intFromEnum(z);
         break :blk m;
     };
     // var mask: [vecLen(Vec3)]i32 = undefined;
@@ -110,10 +118,13 @@ test "swizzle" {
 }
 
 pub inline fn cross(u: Vec3, v: Vec3) Vec3 {
+    const x = Axis.x;
+    const y = Axis.y;
+    const z = Axis.z;
     return vec3(
-        u[1]*v[2] - u[2]*v[1],
-        u[2]*v[0] - u[0]*v[2],
-        u[0]*v[1] - u[1]*v[0],
+        y.select(u)*z.select(v) - z.select(u)*y.select(v),
+        z.select(u)*x.select(v) - x.select(u)*z.select(v),
+        x.select(u)*y.select(v) - y.select(u)*x.select(v),
     );
 }
 test "cross" {
