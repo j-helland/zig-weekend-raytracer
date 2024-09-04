@@ -14,6 +14,8 @@ const vec3s = math.vec3s;
 const Interval = @import("interval.zig").Interval;
 const AABB = @import("aabb.zig").AABB;
 
+const Ray = @import("ray.zig").Ray;
+
 const ITexture = @import("texture.zig").ITexture;
 const IMaterial = @import("material.zig").IMaterial;
 const HitContext = @import("ray.zig").HitContext;
@@ -30,6 +32,7 @@ pub const IEntity = union(enum) {
     collection: EntityCollection,
     bvh_node: BVHNodeEntity,
     translate: Translate,
+    rotate_y: RotateY,
 
     pub fn deinit(self: *Self) void {
         switch (self.*) {
@@ -56,15 +59,19 @@ pub const Translate = struct {
     const Self = @This();
 
     offset: Vec3,
-    entity: *const IEntity,
+    entity: *IEntity,
     aabb: AABB,
 
-    pub fn transform(entity: *const IEntity, offset: Vec3) IEntity {
+    pub fn initEntity(offset: Vec3, entity: *IEntity) IEntity {
         return IEntity{ .translate = Self{ 
             .offset = offset, 
             .entity = entity,
             .aabb = entity.boundingBox().offset(offset),
         }};
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.entity.deinit();
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
@@ -83,6 +90,98 @@ pub const Translate = struct {
         hit_record.point += self.offset;
 
         return true;
+    }
+};
+
+pub const RotateY = struct {
+    const Self = @This();
+
+    sin_theta: Real,
+    cos_theta: Real,
+    entity: *IEntity,
+    aabb: AABB,
+
+    pub fn initEntity(angle_degrees: Real, entity: *IEntity) IEntity {
+        const theta = std.math.degreesToRadians(angle_degrees);
+        const sin_theta = @sin(theta);
+        const cos_theta = @cos(theta);
+        const bbox = entity.boundingBox();
+
+        var min = math.vec3s(std.math.inf(Real));
+        var max = math.vec3s(-std.math.inf(Real));
+
+        for (0..2) |i| {
+            const fi = @as(Real, @floatFromInt(i));
+            const x = fi * bbox.x.max + (1.0 - fi) * bbox.x.min;
+
+            for (0..2) |j| {
+                const fj = @as(Real, @floatFromInt(j));
+                const y = fj * bbox.x.max + (1.0 - fj) * bbox.y.min;
+
+                for (0..2) |k| {
+                    const fk = @as(Real, @floatFromInt(k));
+                    const z = fk * bbox.x.max + (1.0 - fk) * bbox.z.min;
+
+                    const newx = cos_theta * x + sin_theta * z;
+                    const newz = -sin_theta * x + cos_theta * z;
+                    const tester = Vec3{newx, y, newz};
+
+                    for (0..3) |c| {
+                        min[c] = @min(min[c], tester[c]);
+                        max[c] = @max(max[c], tester[c]);
+                    }
+                }
+            }
+        }
+
+        return IEntity{ .rotate_y = Self{ 
+            .sin_theta = sin_theta,
+            .cos_theta = cos_theta,
+            .entity = entity,
+            .aabb = AABB.init(min, max),
+        }};
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.entity.deinit();
+    }
+
+    pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
+        // ray from world space into object space
+        const ray_rotated = Ray{
+            .origin = self.worldToObjectSpace(&ctx.ray.origin),
+            .direction = self.worldToObjectSpace(&ctx.ray.direction),
+            .time = ctx.ray.time,
+        };
+        const ctx_rotated = HitContext{
+            .ray = &ray_rotated,
+            .trange = ctx.trange,
+        };
+
+        if (!self.entity.hit(&ctx_rotated, hit_record)) {
+            return false;
+        }
+
+        hit_record.point = self.objectToWorldSpace(&hit_record.point);
+        hit_record.normal = self.objectToWorldSpace(&hit_record.normal);
+
+        return true;
+    }
+
+    inline fn worldToObjectSpace(self: *const Self, v: *const Vec3) Vec3 {
+        return Vec3{
+            self.cos_theta * v[0] - self.sin_theta * v[2],
+            v[1],
+            self.sin_theta * v[0] + self.cos_theta * v[2],
+        };
+    }
+
+    inline fn objectToWorldSpace(self: *const Self, v: *const Vec3) Vec3 {
+        return Vec3{
+            self.cos_theta * v[0] + self.sin_theta * v[2],
+            v[1],
+            -self.sin_theta * v[0] + self.cos_theta * v[2],
+        };
     }
 };
 
@@ -141,6 +240,11 @@ pub const BVHNodeEntity = struct {
 
     pub fn initEntity(allocator: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !IEntity {
         return IEntity{ .bvh_node = try init(allocator, entities, start, end) };
+    }
+
+    pub fn deinit(self: *Self) void {
+        if (self.left) |left| left.deinit();
+        if (self.right) |right| right.deinit();
     }
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {

@@ -476,8 +476,13 @@ fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{555, 555, 555}, Vec3{-555, 0, 0}, Vec3{0, 0, -555}, &material_white));
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{0, 0, 555}, Vec3{555, 0, 0}, Vec3{0, 555, 0}, &material_white));
 
-    scene.addAssumeCapacity(try ent.createBoxEntity(allocator, Point3{130, 0, 65}, Point3{295, 165, 230}, &material_white));
-    scene.addAssumeCapacity(try ent.createBoxEntity(allocator, Point3{265, 0, 295}, Point3{430, 330, 460}, &material_white));
+    var box1 = try ent.createBoxEntity(allocator, Point3{0, 0, 0}, Point3{165, 165, 165}, &material_white);
+    var br1 = ent.RotateY.initEntity(-18.0, &box1);
+    scene.addAssumeCapacity(ent.Translate.initEntity(Vec3{130, 0, 65}, &br1));
+
+    var box2 = try ent.createBoxEntity(allocator, Point3{0, 0, 0}, Point3{165, 330, 165}, &material_white);
+    var br2 = ent.RotateY.initEntity(15.0, &box2);
+    scene.addAssumeCapacity(ent.Translate.initEntity(Vec3{265, 0, 295}, &br2));
 
     scene.addAssumeCapacity(QuadEntity.initEntity(Point3{343, 554, 332}, Vec3{-130, 0, 0}, Vec3{0, 0, -105}, &material_light));
 
@@ -489,8 +494,6 @@ fn cornellBox(allocator: std.mem.Allocator, thread_pool: *std.Thread.Pool, timer
     var mem_pool = std.heap.MemoryPool(IEntity).init(std.heap.page_allocator);
     defer mem_pool.deinit();
     var world = try ent.BVHNodeEntity.initEntity(&mem_pool, entity_refs.items, 0, scene.entities.items.len);
-
-    // const world = Entity{ .collection = scene };
 
     // ---- camera ----
     const aspect = 1.0;
@@ -553,7 +556,7 @@ pub fn main() !void {
 
     // ---- thread pool ----
     var thread_pool: std.Thread.Pool = undefined;
-    try thread_pool.init(.{ .allocator = allocator, .n_jobs = 16 });
+    try thread_pool.init(.{ .allocator = allocator, .n_jobs = 32 });
     defer thread_pool.deinit();
 
     var timer = Timer.init();
