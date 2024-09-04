@@ -66,7 +66,7 @@ pub inline fn lerp(x: Vec3, y: Vec3, alpha: Real) Vec3 {
     return x + vec3s(alpha) * (y - x);
 }
 
-fn vecLen(comptime V: type) comptime_int {
+pub inline fn vecLen(comptime V: type) comptime_int {
     return switch (@typeInfo(V)) {
         .Vector => |info| info.len, 
         .Array => |info| info.len,
@@ -74,15 +74,17 @@ fn vecLen(comptime V: type) comptime_int {
     };
 }
 
-/// Fill superfluous @Vector components with a given value.
-pub inline fn rightPad(comptime V: type, v: *V, val: std.meta.Child(V)) void {
-    const size = switch (V) {
+pub inline fn vecCapacity(comptime V: type) comptime_int {
+    return switch (V) {
         Vec3 => 3,
         Vec2 => 2,
         else => @compileError("Invalid type " ++ @typeName(V)),
     };
+}
 
-    inline for (size - 1 .. vecLen(V)) |i| {
+/// Fill superfluous @Vector components with a given value.
+pub inline fn rightPad(comptime V: type, v: *V, val: std.meta.Child(V)) void {
+    inline for (vecCapacity(V) - 1 .. vecLen(V)) |i| {
         v[i] = val;
     }
 }
@@ -110,14 +112,20 @@ test "swizzle" {
 }
 
 pub inline fn cross(u: Vec3, v: Vec3) Vec3 {
-    const x = Axis.x;
-    const y = Axis.y;
-    const z = Axis.z;
-    return vec3(
-        y.select(u)*z.select(v) - z.select(u)*y.select(v),
-        z.select(u)*x.select(v) - x.select(u)*z.select(v),
-        x.select(u)*y.select(v) - y.select(u)*x.select(v),
-    );
+    // return vec3(
+    //     y.select(u)*z.select(v) - z.select(u)*y.select(v),
+    //     z.select(u)*x.select(v) - x.select(u)*z.select(v),
+    //     x.select(u)*y.select(v) - y.select(u)*x.select(v),
+    // );
+    var xu = swizzle(u, .y, .z, .x);
+    var xv = swizzle(v, .z, .x, .y);
+    var xmm = xu * xv;
+
+    xu = swizzle(xu, .y, .z, .x);
+    xv = swizzle(xv, .z, .x, .y);
+    xmm -= xu * xv;
+
+    return xmm;
 }
 test "cross" {
     {
@@ -134,8 +142,7 @@ test "cross" {
 
 pub inline fn dot(u: Vec3, v: Vec3) Real {
     const xmm = u * v;
-    return @reduce(.Add, xmm);
-    // return xmm[0] + xmm[1] + xmm[2];
+    return xmm[0] + xmm[1] + xmm[2];
 }
 test "dot" {
     const u = vec3(1, 1, 1);
