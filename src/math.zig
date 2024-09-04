@@ -23,7 +23,7 @@ pub const Axis = enum(u2) {
 
     x, y, z,
 
-    pub inline fn select(self: Axis, v: anytype) Real {
+    pub inline fn select(self: Axis, v: anytype) std.meta.Child(@TypeOf(v)) {
         return v[@intFromEnum(self)];
     }
 };
@@ -38,7 +38,7 @@ test "vec3s" {
 
 /// Create a Vec3 type populated with specified values.
 pub inline fn vec3(x: Real, y: Real, z: Real) Vec3 {
-    var v: Vec3 = undefined;
+    var v = std.mem.zeroes(Vec3);
     v[@intFromEnum(Axis.x)] = x;
     v[@intFromEnum(Axis.y)] = y;
     v[@intFromEnum(Axis.z)] = z;
@@ -46,7 +46,7 @@ pub inline fn vec3(x: Real, y: Real, z: Real) Vec3 {
 }
 
 pub inline fn vec2(x: Real, y: Real) Vec2 {
-    var v: Vec2 = undefined;
+    var v = std.mem.zeroes(Vec2);
     v[@intFromEnum(Axis.x)] = x;
     v[@intFromEnum(Axis.y)] = y;
     return v;
@@ -74,22 +74,16 @@ fn vecLen(comptime V: type) comptime_int {
     };
 }
 
-fn createMask(comptime V: type) @Vector(vecLen(V), i32) {
-    const len = vecLen(V);
-    const M = @Vector(len, i32);
-    return comptime blk: {
-        var mask: M = undefined;
-        for (0..len) |i| mask[i] = i;
-        break :blk mask;
+/// Fill superfluous @Vector components with a given value.
+pub inline fn rightPad(comptime V: type, v: *V, val: std.meta.Child(V)) void {
+    const size = switch (V) {
+        Vec3 => 3,
+        Vec2 => 2,
+        else => @compileError("Invalid type " ++ @typeName(V)),
     };
-}
-test "createMask" {
-    const vec_types = [_]type{ Vec3, Vec2 };
-    inline for (vec_types) |V| { // vec3
-        const mask = createMask(V);
-        for (0..vecLen(V)) |i| {
-            try std.testing.expectEqual(@as(i32, @intCast(i)), mask[i]);
-        }
+
+    inline for (size - 1 .. vecLen(V)) |i| {
+        v[i] = val;
     }
 }
 
@@ -100,14 +94,12 @@ pub inline fn swizzle(
     comptime z: Axis,
 ) Vec3 {
     const mask = comptime blk: {
-        var m = createMask(Vec3);
+        var m = std.simd.iota(i32, vecLen(Vec3));
         m[@intFromEnum(Axis.x)] = @intFromEnum(x);
         m[@intFromEnum(Axis.y)] = @intFromEnum(y);
         m[@intFromEnum(Axis.z)] = @intFromEnum(z);
         break :blk m;
     };
-    // var mask: [vecLen(Vec3)]i32 = undefined;
-    // const mask = std.mem.zeroes(@Vector(vecLen(Vec3), i32));
     return @shuffle(Real, v, undefined, mask);
 }
 test "swizzle" {
@@ -142,7 +134,8 @@ test "cross" {
 
 pub inline fn dot(u: Vec3, v: Vec3) Real {
     const xmm = u * v;
-    return xmm[0] + xmm[1] + xmm[2];
+    return @reduce(.Add, xmm);
+    // return xmm[0] + xmm[1] + xmm[2];
 }
 test "dot" {
     const u = vec3(1, 1, 1);

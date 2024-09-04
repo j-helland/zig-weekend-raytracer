@@ -137,10 +137,8 @@ pub const RotateY = struct {
                     const newz = -sin_theta * x + cos_theta * z;
                     const tester = vec3(newx, y, newz);
 
-                    for (0..3) |c| {
-                        min[c] = @min(min[c], tester[c]);
-                        max[c] = @max(max[c], tester[c]);
-                    }
+                    min = @min(min, tester);
+                    max = @max(max, tester);
                 }
             }
         }
@@ -259,6 +257,23 @@ pub const BVHNodeEntity = struct {
         return entity;
     }
 
+    // fn hitAABB2(box1: *const AABB, box2: *const AABB, ray: *const Ray, ray_t: Interval(Real)) @Vector(8, bool) {
+    //     const min = std.simd.join(box1.min, box2.min);
+    //     const max = std.simd.join(box1.max, box2.max);
+    //     const origin = std.simd.join(ray.origin, ray.origin);
+    //     const direction = std.simd.join(ray.direction, ray.direction);
+    //     const ray_t_min = std.simd.join(vec3s(ray_t.min), vec3s(ray_t.min));
+    //     const ray_t_max = std.simd.join(vec3s(ray_t.max), vec3s(ray_t.max));
+
+    //     const t0 = (min - origin) / direction;
+    //     const t1 = (max - origin) / direction;
+
+    //     const tmin = @max(@min(t0, t1), ray_t_min);
+    //     const tmax = @min(@max(t0, t1), ray_t_max);
+
+    //     return tmax > tmin;
+    // }
+
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
         const tracy_zone = ztracy.ZoneN(@src(), "BVH::hit");
         defer tracy_zone.End();
@@ -320,7 +335,9 @@ pub const EntityCollection = struct {
         defer tracy_zone.End();
 
         // Prefer BVH hierarchy if one exists.
-        if (self.bvh_root) |bvh| return bvh.hit(_ctx, hit_record);
+        if (self.bvh_root) |bvh| {
+            return bvh.hit(_ctx, hit_record);
+        }
 
         var ctx = _ctx.*;
         var hit_record_tmp = HitRecord{};
@@ -355,17 +372,7 @@ pub fn createBoxEntity(
 
     // two opposite vertices with min/max coords
     const min = @min(point_a, point_b);
-    // const min = vec3(
-    //     @min(point_a[0], point_b[0]),
-    //     @min(point_a[1], point_b[1]),
-    //     @min(point_a[2], point_b[2]),
-    // );
     const max = @max(point_a, point_b);
-    // const max = vec3(
-    //     @max(point_a[0], point_b[0]),
-    //     @max(point_a[1], point_b[1]),
-    //     @max(point_a[2], point_b[2]),
-    // );
 
     const diff = max - min;
     const dx = vec3( diff[0], 0, 0 );
@@ -532,7 +539,10 @@ pub const SphereEntity = struct {
 
         // animation
         const center =
-            if (self.b_is_moving) self.move(ctx.ray.time) else self.center;
+            if (self.b_is_moving) 
+                self.move(ctx.ray.time) 
+            else 
+                self.center;
 
         // direction from ray to sphere center
         const oc = center - ctx.ray.origin;

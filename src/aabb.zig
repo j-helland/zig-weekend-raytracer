@@ -2,9 +2,13 @@ const std = @import("std");
 
 const ztracy = @import("ztracy");
 
+const math = @import("math.zig");
 const Real = @import("math.zig").Real;
 const Vec3 = @import("math.zig").Vec3;
 const Axis = @import("math.zig").Axis;
+const vec3 = @import("math.zig").vec3;
+const vec3s = @import("math.zig").vec3s;
+
 const Ray = @import("ray.zig").Ray;
 const Interval = @import("interval.zig").Interval;
 
@@ -15,12 +19,21 @@ pub const AABB = struct {
     y: Interval(Real) = .{},
     z: Interval(Real) = .{},
 
+    // cache the min/max bounds
+    min: Vec3 = undefined,
+    max: Vec3 = undefined,
+
     pub fn init(a: Vec3, b: Vec3) Self {
+        const min = @min(a, b);
+        const max = @max(a, b);
         var self = Self{
-            .x = .{ .min = @min(a[0], b[0]), .max = @max(a[0], b[0]) },
-            .y = .{ .min = @min(a[1], b[1]), .max = @max(a[1], b[1]) },
-            .z = .{ .min = @min(a[2], b[2]), .max = @max(a[2], b[2]) },
+            .x = .{ .min = Axis.x.select(min), .max = Axis.x.select(max) },
+            .y = .{ .min = Axis.y.select(min), .max = Axis.y.select(max) },
+            .z = .{ .min = Axis.z.select(min), .max = Axis.z.select(max) },
+            .min = min,
+            .max = max,
         };
+
         // Avoid degenerate cases where AABB collapses to zero volume.
         self.padToMinimum();
         return self;
@@ -31,14 +44,18 @@ pub const AABB = struct {
             .x = self.x.unionWith(other.x),
             .y = self.y.unionWith(other.y),
             .z = self.z.unionWith(other.z),
+            .min = @min(self.min, other.min),
+            .max = @max(self.max, other.max),
         };
     }
 
     pub fn offset(self: *const Self, displacement: Vec3) Self {
         return Self{
-            .x = self.x.offset(displacement[0]),
-            .y = self.y.offset(displacement[1]),
-            .z = self.z.offset(displacement[2]),
+            .x = self.x.offset(Axis.x.select(displacement)),
+            .y = self.y.offset(Axis.y.select(displacement)),
+            .z = self.z.offset(Axis.z.select(displacement)),
+            .min = self.min - vec3s(displacement),
+            .max = self.max + vec3s(displacement),
         };
     }
 
@@ -64,35 +81,37 @@ pub const AABB = struct {
         const tracy_zone = ztracy.ZoneN(@src(), "AABB::hit");
         defer tracy_zone.End();
 
-        // const it_min = Vec3{ self.x.min, self.y.min, self.z.min };
-        // const it_max = Vec3{ self.x.max, self.y.max, self.z.max };
+        const t0 = (self.min - ray.origin) / ray.direction;
+        const t1 = (self.max - ray.origin) / ray.direction;
 
-        // var t0 = (it_min - ray.origin) / ray.direction;
-        // var t1 = (it_max - ray.origin) / ray.direction;
+        var tmin = @max(@min(t0, t1), vec3s(ray_t.min));
+        var tmax = @min(@max(t0, t1), vec3s(ray_t.max));
 
-        // Check intersection against AABB slabs. 
-        inline for (comptime std.enums.values(Axis)) |axis| {
-            const axis_idx = @as(u2, @intFromEnum(axis));
-            const interval = self.axisInterval(axis);
-            const axis_dir_inv = 1.0 / ray.direction[axis_idx];
+        // Make sure superfluous @Vector components will eval to "true" in @reduce expression.
+        math.rightPad(Vec3, &tmin, 0);
+        math.rightPad(Vec3, &tmax, 1);
 
-            var t0: Real = (interval.min - ray.origin[axis_idx]) * axis_dir_inv;
-            var t1: Real = (interval.max - ray.origin[axis_idx]) * axis_dir_inv;
-            if (t0 > t1) std.mem.swap(Real, &t0, &t1);
-
-            const tmin = @max(t0, ray_t.min);
-            const tmax = @min(t1, ray_t.max);
-
-            // No overlap in this axis necessarily means ray does not hit.
-            if (tmax <= tmin) return false;
-        }
-        return true;
+        return @reduce(.And, tmax > tmin);
     }
 
     fn padToMinimum(self: *Self) void {
         const delta = 0.0001;
-        if (self.x.size() < delta) self.x = self.x.expand(delta);
-        if (self.y.size() < delta) self.y = self.y.expand(delta);
-        if (self.z.size() < delta) self.z = self.z.expand(delta);
+        var min_max_offset = vec3s(0);
+
+        if (self.x.size() < delta) {
+            self.x = self.x.expand(delta);
+            min_max_offset[@intFromEnum(Axis.x)] = delta;
+        }
+        if (self.y.size() < delta) {
+            self.y = self.y.expand(delta);
+            min_max_offset[@intFromEnum(Axis.y)] = delta;
+        }
+        if (self.z.size() < delta) {
+            self.z = self.z.expand(delta);
+            min_max_offset[@intFromEnum(Axis.z)] = delta;
+        }
+
+        self.min -= min_max_offset;
+        self.max += min_max_offset;
     }
 };
