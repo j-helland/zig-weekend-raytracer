@@ -47,6 +47,7 @@ const ArgParser = @import("argparser.zig").ArgParser;
 pub const log_level: std.log.Level = .info;
 
 const UserArgs = struct {
+    thread_pool_size: usize = 128,
     image_width: usize = 800,
     image_out_path: []const u8 = "image.ppm",
     samples_per_pixel: usize = 10,
@@ -441,13 +442,24 @@ fn cornellBox(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
     // ---- entities ----
     var scene = try EntityCollection.initEntity(entity_pool, allocator);
     defer scene.deinit();
-    try scene.collection.entities.ensureTotalCapacity(8);
+    try scene.collection.entities.ensureTotalCapacity(9);
 
+    // left
     scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 555, 0, 0 ), vec3( 0, 555, 0 ), vec3( 0, 0, 555 ), &material_green));
+    // right
     scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 0, 0, 0 ), vec3( 0, 555, 0 ), vec3( 0, 0, 555 ), &material_red));
+    // bottom
     scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 0, 0, 0 ), vec3( 555, 0, 0 ), vec3( 0, 0, 555 ), &material_white));
+    // top
     scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 555, 555, 555 ), vec3( -555, 0, 0 ), vec3( 0, 0, -555 ), &material_white));
+    // back
     scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 0, 0, 555 ), vec3( 555, 0, 0 ), vec3( 0, 555, 0 ), &material_white));
+
+    // right mirror
+    scene.collection.addAssumeCapacity(
+        try Translate.initEntity(entity_pool, vec3(1, 104, 40), 
+            try QuadEntity.initEntity(entity_pool, vec3(0, 0, 0), vec3( 0, 332, 0 ), vec3( 0, 0, 332 ), 
+                &MetalMaterial.initMaterial(vec3(0.7, 0.6, 0.5), 0.0))));
 
     const box1 = try Translate.initEntity(entity_pool, vec3(130, 0, 65), 
         try RotateY.initEntity(entity_pool, -18.0, 
@@ -460,7 +472,8 @@ fn cornellBox(allocator: std.mem.Allocator, entity_pool: *std.heap.MemoryPool(IE
     scene.collection.addAssumeCapacity(box2);
 
     // light
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(entity_pool, vec3( 343, 554, 332 ), vec3( -130, 0, 0 ), vec3( 0, 0, -105 ), &material_light));
+    scene.collection.addAssumeCapacity(
+        try QuadEntity.initEntity(entity_pool, vec3( 353, 554, 312 ), vec3( -150, 0, 0 ), vec3( 0, 0, -125 ), &material_light));
 
     try scene.collection.createBvhTree(entity_pool);
 
@@ -652,7 +665,7 @@ pub fn main() !void {
 
     // ---- thread pool ----
     var thread_pool: std.Thread.Pool = undefined;
-    try thread_pool.init(.{ .allocator = allocator, .n_jobs = 128 });
+    try thread_pool.init(.{ .allocator = allocator, .n_jobs = args.thread_pool_size });
     defer thread_pool.deinit();
 
     var timer = Timer.init();
@@ -666,7 +679,7 @@ pub fn main() !void {
     // try checkeredSpheres(allocator, &entity_pool, &thread_pool, &timer, args);
     // try earth(allocator, &entity_pool, &thread_pool, &timer, args);
     // try quads(allocator, &entity_pool, &thread_pool, &timer, args);
-    try emissive(allocator, &entity_pool, &thread_pool, &timer, args);
-    // try cornellBox(allocator, &entity_pool, &thread_pool, &timer, args);
+    // try emissive(allocator, &entity_pool, &thread_pool, &timer, args);
+    try cornellBox(allocator, &entity_pool, &thread_pool, &timer, args);
     // try finalScene(allocator, &entity_pool, &thread_pool, &timer, args);
 }

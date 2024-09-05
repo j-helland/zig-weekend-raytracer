@@ -54,8 +54,8 @@ pub const AABB = struct {
             .x = self.x.offset(Axis.x.select(displacement)),
             .y = self.y.offset(Axis.y.select(displacement)),
             .z = self.z.offset(Axis.z.select(displacement)),
-            .min = self.min - vec3s(displacement),
-            .max = self.max + vec3s(displacement),
+            .min = self.min - displacement,
+            .max = self.max + displacement,
         };
     }
 

@@ -52,6 +52,10 @@ pub const Framebuffer = struct {
     pub fn deinit(self: *const Self) void {
         self.allocator.free(self.buffer);
     }
+
+    pub fn clear(self: *Self, clear_color: Color) void {
+        for (self.buffer) |*c| c.* = clear_color;
+    }
 };
 
 pub const Camera = struct {
@@ -157,17 +161,23 @@ pub const Camera = struct {
         const tracy_zone = ztracy.ZoneN(@src(), "Camera::render");
         defer tracy_zone.End();
 
+        framebuffer.clear(vec3(0, 0, 0));
+
         var wg = std.Thread.WaitGroup{};
 
         var render_thread_context = RenderThreadContext{
             .mut = .{
                 .framebuffer = framebuffer.buffer,
+                .mutex = undefined,
             },
 
             // Rendering surface
             .row_idx = 0,
             .col_range = .{ .min = 0, .max = 0 },
             .num_cols = self.image_width,
+
+            .samples_per_pixel = self.samples_per_pixel,
+            .sample_range = .{ .min = 0, .max = 0 },
 
             // Scene
             .entity = entity,
@@ -184,12 +194,18 @@ pub const Camera = struct {
             .defocus_disk_u = self.defocus_disk_u,
             .defocus_disk_v = self.defocus_disk_v,
 
-            .samples_per_pixel = self.samples_per_pixel,
             .max_ray_bounce_depth = self.max_ray_bounce_depth,
         };
 
         // Similar to GPU 4x4 pixel shading work groups, except that here we use row-major order lines and use bigger chunks due to OS thread overhead.
         const block_size = 16;
+
+        // TODO: sample parallelism seems to have no performance impact
+        const sample_partition_size = self.samples_per_pixel; 
+
+        var write_mutexes = std.ArrayList(std.Thread.Mutex).init(framebuffer.allocator);
+        defer write_mutexes.deinit();
+        try write_mutexes.ensureTotalCapacity((self.image_width * self.image_height) / block_size + 1);
 
         // Write pixels into shared image. No need to lock since the image is partitioned into non-overlapping lines.
         for (0..self.image_height) |v| {
@@ -197,9 +213,20 @@ pub const Camera = struct {
 
             var idx_u: usize = 0;
             while (idx_u < self.image_width) : (idx_u += block_size) {
-                // Handle uneven chunking.
-                render_thread_context.col_range = .{ .min = idx_u, .max = @min(self.image_width, idx_u + block_size) };
-                self.thread_pool.spawnWg(&wg, rayColorLine, .{render_thread_context});
+
+                write_mutexes.appendAssumeCapacity(std.Thread.Mutex{});
+                render_thread_context.mut.mutex = &write_mutexes.items[write_mutexes.items.len - 1];
+
+                var idx_sample: usize = 0;
+                while (idx_sample < self.samples_per_pixel) : (idx_sample += sample_partition_size) {
+                    // Handle uneven chunking.
+                    render_thread_context.col_range = 
+                        .{ .min = idx_u, .max = @min(self.image_width, idx_u + block_size) };
+                    render_thread_context.sample_range = 
+                        .{ .min = idx_sample, .max = @min(self.samples_per_pixel, idx_sample + sample_partition_size) };
+
+                    self.thread_pool.spawnWg(&wg, rayColorLine, .{render_thread_context});
+                }
             }
         }
         self.thread_pool.waitAndWork(&wg);
@@ -211,6 +238,7 @@ const RenderThreadContext = struct {
     /// Keep mutable fields here for clarity.
     mut: struct {
         framebuffer: []Color,
+        mutex: *std.Thread.Mutex,
     },
 
     // Rendering surface parameters.
@@ -218,6 +246,9 @@ const RenderThreadContext = struct {
     row_idx: usize,
     col_range: Interval(usize),
     num_cols: usize,
+
+    sample_range: Interval(usize),
+    samples_per_pixel: usize,
 
     // Contains scene to raytrace.
     entity: *const IEntity,
@@ -235,7 +266,6 @@ const RenderThreadContext = struct {
     defocus_disk_u: Vec3,
     defocus_disk_v: Vec3,
 
-    samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
 };
 
@@ -247,13 +277,17 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 
     const pixel_color_scale = math.vec3s(1.0 / @as(Real, @floatFromInt(ctx.samples_per_pixel)));
 
-    for (ctx.col_range.min..ctx.col_range.max) |col_idx| {
+    for (ctx.col_range.min .. ctx.col_range.max) |col_idx| {
         var color = vec3(0, 0, 0);
-        for (0..ctx.samples_per_pixel) |_| {
+        for (ctx.sample_range.min .. ctx.sample_range.max) |_| {
             const ray = sampleRay(&ctx, col_idx);
-            color += rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
+            color += pixel_color_scale * rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
         }
-        ctx.mut.framebuffer[ctx.row_idx * ctx.num_cols + col_idx] = color * pixel_color_scale;
+
+        // framebuffer write
+        ctx.mut.mutex.lock();
+        ctx.mut.framebuffer[ctx.row_idx * ctx.num_cols + col_idx] += color;
+        ctx.mut.mutex.unlock();
     }
 }
 
