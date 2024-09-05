@@ -31,6 +31,9 @@ pub const Renderer = struct {
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
 
+    sqrt_spp: usize,
+    recip_sqrt_spp: Real,
+
     pub fn render(self: *const Self, camera: *const Camera, entity: *const IEntity, framebuffer: *Framebuffer) !void {
         const tracy_zone = ztracy.ZoneN(@src(), "Renderer::render");
         defer tracy_zone.End();
@@ -44,12 +47,14 @@ pub const Renderer = struct {
             },
 
             .samples_per_pixel = self.samples_per_pixel,
+            .sqrt_spp = self.sqrt_spp,
+            .recip_sqrt_spp = self.recip_sqrt_spp,
             .max_ray_bounce_depth = self.max_ray_bounce_depth,
-            .background_color = self.background_color,
 
             .entity = entity,
             .camera_position = camera.position,
             .viewport = &camera.getViewport(framebuffer),
+            .background_color = self.background_color,
 
             .b_is_depth_of_field = camera.b_is_depth_of_field,
             .defocus_disk_u = camera.defocus_disk_u,
@@ -110,8 +115,10 @@ const RenderThreadContext = struct {
     sample_range: Interval(usize) = .{},
 
     // Raytracing parameters.
-    max_ray_bounce_depth: usize,
     samples_per_pixel: usize,
+    sqrt_spp: usize,
+    recip_sqrt_spp: Real,
+    max_ray_bounce_depth: usize,
 
     // View
     camera_position: Point3,
@@ -136,10 +143,15 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 
     for (ctx.col_range.min .. ctx.col_range.max) |col_idx| {
         var color = math.vec3(0, 0, 0);
-        for (ctx.sample_range.min .. ctx.sample_range.max) |_| {
-            const ray = sampleRay(rand, &ctx, col_idx);
-            color += pixel_color_scale * rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
-        }
+        // for (ctx.sample_range.min .. ctx.sample_range.max) |_| {
+
+            for (0..ctx.sqrt_spp) |sj| {
+                for (0..ctx.sqrt_spp) |si| {
+                    const ray = sampleRay(rand, &ctx, col_idx, si, sj);
+                    color += pixel_color_scale * rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
+                }
+            }
+        // }
 
         // framebuffer write
         if (ctx.mut.write_mutex) |mtx| mtx.lock();
@@ -149,7 +161,7 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 }
 
 /// Generates a random ray in a box around the current pixel (halfway to adjacent pixels).
-fn sampleRay(rand: std.Random, ctx: *const RenderThreadContext, col_idx: usize) Ray {
+fn sampleRay(rand: std.Random, ctx: *const RenderThreadContext, col_idx: usize, si: usize, sj: usize) Ray {
     const tracy_zone = ztracy.ZoneN(@src(), "sampleRay");
     defer tracy_zone.End();
 
@@ -160,7 +172,8 @@ fn sampleRay(rand: std.Random, ctx: *const RenderThreadContext, col_idx: usize) 
         if (ctx.samples_per_pixel == 1) 
             math.vec3(0, 0, 0) 
         else 
-            rng.sampleSquareXY(rand);
+            // rng.sampleSquareXY(rand);
+            sampleSquareStratified(rand, ctx, si, sj);
     const sample = ctx.viewport.pixel00_loc 
         + ctx.viewport.pixel_delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0]) 
         + ctx.viewport.pixel_delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
@@ -178,6 +191,12 @@ fn sampleRay(rand: std.Random, ctx: *const RenderThreadContext, col_idx: usize) 
         .direction = direction,
         .time = time,
     };
+}
+
+fn sampleSquareStratified(rand: std.Random, ctx: *const RenderThreadContext, si: usize, sj: usize) Vec3 {
+    const px = (rand.float(Real) + @as(Real, @floatFromInt(si))) * ctx.recip_sqrt_spp - 0.5;
+    const py = (rand.float(Real) + @as(Real, @floatFromInt(sj))) * ctx.recip_sqrt_spp - 0.5;
+    return math.vec3(px, py, 0);
 }
 
 fn sampleDefocusDisk(rand: std.Random, ctx: *const RenderThreadContext) Vec3 {

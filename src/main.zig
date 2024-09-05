@@ -535,12 +535,16 @@ pub fn main() !void {
         .args = args,
     };
 
+    const sqrt_spp = @sqrt(@as(Real, @floatFromInt(args.samples_per_pixel)));
     var renderer = Renderer{
         .thread_pool = &thread_pool,
         .background_color = vec3(0, 0, 0),
         .clear_color = vec3(0, 0, 0),
         .samples_per_pixel = ctx.args.samples_per_pixel,
         .max_ray_bounce_depth = ctx.args.ray_bounce_max_depth,
+
+        .sqrt_spp = @intFromFloat(sqrt_spp),
+        .recip_sqrt_spp = 1.0 / sqrt_spp,
     };
 
     var framebuffer = try Framebuffer.init(allocator, args.image_height, args.image_width);
