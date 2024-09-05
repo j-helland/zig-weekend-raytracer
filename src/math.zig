@@ -14,7 +14,24 @@ fn Vec(comptime T: type, size: comptime_int) type {
     return @Vector(suggestVectorSize(T, size), T);
 }
 
+pub inline fn vecLen(comptime V: type) comptime_int {
+    return switch (@typeInfo(V)) {
+        .Vector => |info| info.len, 
+        .Array => |info| info.len,
+        inline else => @compileError("Invalid vector type " ++ @typeName(V)),
+    };
+}
+
+pub inline fn vecCapacity(comptime V: type) comptime_int {
+    return switch (V) {
+        Vec3 => 3,
+        Vec2 => 2,
+        else => @compileError("Invalid type " ++ @typeName(V)),
+    };
+}
+
 pub const Real = f64;
+
 pub const Vec3 = Vec(Real, 3);
 pub const Vec2 = Vec(Real, 2);
 pub const Vecx = Vec(Real, 4);
@@ -64,22 +81,6 @@ pub inline fn gammaCorrection(color: Vec3) Vec3 {
 
 pub inline fn lerp(x: Vec3, y: Vec3, alpha: Real) Vec3 {
     return x + vec3s(alpha) * (y - x);
-}
-
-pub inline fn vecLen(comptime V: type) comptime_int {
-    return switch (@typeInfo(V)) {
-        .Vector => |info| info.len, 
-        .Array => |info| info.len,
-        inline else => @compileError("Invalid vector type " ++ @typeName(V)),
-    };
-}
-
-pub inline fn vecCapacity(comptime V: type) comptime_int {
-    return switch (V) {
-        Vec3 => 3,
-        Vec2 => 2,
-        else => @compileError("Invalid type " ++ @typeName(V)),
-    };
 }
 
 /// Fill superfluous @Vector components with a given value.
