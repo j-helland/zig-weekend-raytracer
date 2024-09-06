@@ -13,6 +13,7 @@ pub const IPdf = union(enum) {
     sphere: SpherePdf,
     cosine: CosinePdf,
     entity: EntityPdf,
+    mixture: MixturePdf,
 
     pub fn value(self: *const Self, direction: Vec3) Real {
         return switch(self.*) {
@@ -89,5 +90,34 @@ pub const EntityPdf = struct {
 
     pub inline fn generate(self: *const Self) Vec3 {
         return self.entity.sampleDirectionToSurface(self.rand, self.origin);
+    }
+};
+
+pub const MixturePdf = struct {
+    const Self = @This();
+
+    rand: std.Random,
+    pdf1: *const IPdf,
+    pdf2: *const IPdf,
+
+    pub fn initPdf(rand: std.Random, pdf1: *const IPdf, pdf2: *const IPdf) IPdf {
+        return IPdf{ .mixture = Self{
+            .rand = rand,
+            .pdf1 = pdf1,
+            .pdf2 = pdf2,
+        }};
+    }
+
+    pub fn value(self: *const Self, direction: Vec3) Real {
+        return @reduce(.Add, math.vec2s(0.5) * math.vec2(
+            self.pdf1.value(direction),
+            self.pdf2.value(direction),
+        ));
+    }
+
+    pub fn generate(self: *const Self) Vec3 {
+        const p = self.rand.float(math.Real);
+        if (p < 0.5) return self.pdf1.generate();
+        return self.pdf2.generate();
     }
 };

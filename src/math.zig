@@ -93,6 +93,10 @@ test "vec3s" {
     try expectVecEqual(vec3(1, 1, 1), vec3s(1));
 }
 
+pub inline fn vec2s(x: Real) Vec2 {
+    return @splat(x);
+}
+
 /// Create a Vec3 type populated with specified values.
 pub inline fn vec3(x: Real, y: Real, z: Real) Vec3 {
     var v = std.mem.zeroes(Vec3);

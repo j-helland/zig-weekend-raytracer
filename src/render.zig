@@ -260,23 +260,17 @@ fn rayColor(
             return emission_color;
         }
 
-        if (important_entity) |e| {
-            var entity_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, e, record.point);
-            ray_scattered = Ray{
-                .origin = record.point,
-                .direction = entity_pdf.generate(),
-                .time = ray.time,
-            };
-            pdf_value = entity_pdf.value(ray_scattered.direction);
-        } else {
-            var surface_pdf = pdf.CosinePdf.initPdf(ctx_scatter.random, record.normal);
-            ray_scattered = Ray{
-                .origin = record.point,
-                .direction = surface_pdf.generate(),
-                .time = ray.time,
-            };
-            pdf_value = surface_pdf.value(ray_scattered.direction);
-        }
+        std.debug.assert(important_entity != null);
+        const entity_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, important_entity.?, record.point);
+        const cosine_pdf = pdf.CosinePdf.initPdf(ctx_scatter.random, record.normal);
+        const surface_pdf = pdf.MixturePdf.initPdf(ctx_scatter.random, &entity_pdf, &cosine_pdf);
+
+        ray_scattered = Ray{
+            .origin = record.point,
+            .direction = surface_pdf.generate(),
+            .time = ray.time,
+        };
+        pdf_value = surface_pdf.value(ray_scattered.direction);
 
         // // TODO: hack in light importance sampling
         // const on_light = math.vec3(
