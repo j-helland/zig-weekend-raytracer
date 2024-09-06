@@ -13,7 +13,8 @@ const Interval = @import("interval.zig").Interval;
 const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("ray.zig").HitRecord;
 const HitContext = @import("ray.zig").HitContext;
-const ScatterContext = @import("ray.zig").ScatterContext;
+
+const ScatterContext = @import("material.zig").ScatterContext;
 
 const Camera = @import("camera.zig").Camera;
 const Viewport = @import("camera.zig").Viewport;
@@ -23,6 +24,7 @@ const IEntity = @import("entity.zig").IEntity;
 const rng = @import("rng.zig");
 
 const smpl = @import("sampler.zig");
+const pdf = @import("pdf.zig");
 
 pub const Renderer = struct {
     const Self = @This();
@@ -32,9 +34,7 @@ pub const Renderer = struct {
     background_color: Color,
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
-
-    sqrt_spp: usize,
-    recip_sqrt_spp: Real,
+    important_entity: ?*const IEntity = null,
 
     pub fn render(self: *const Self, camera: *const Camera, entity: *const IEntity, framebuffer: *Framebuffer) !void {
         const tracy_zone = ztracy.ZoneN(@src(), "Renderer::render");
@@ -49,9 +49,8 @@ pub const Renderer = struct {
             },
 
             .samples_per_pixel = self.samples_per_pixel,
-            .sqrt_spp = self.sqrt_spp,
-            .recip_sqrt_spp = self.recip_sqrt_spp,
             .max_ray_bounce_depth = self.max_ray_bounce_depth,
+            .important_entity = self.important_entity,
 
             .entity = entity,
             .camera_position = camera.position,
@@ -99,9 +98,8 @@ const RenderThreadContext = struct {
 
     // Raytracing parameters.
     samples_per_pixel: usize,
-    sqrt_spp: usize,
-    recip_sqrt_spp: Real,
     max_ray_bounce_depth: usize,
+    important_entity: ?*const IEntity,
 
     // View
     camera_position: Point3,
@@ -123,8 +121,15 @@ fn rayColorLine(ctx: RenderThreadContext) void {
     const rand = rng.getThreadRng();
 
     const seed = rand.int(u32);
-    var sampler = smpl.SobolSampler(Real)
-        .initSampler(ctx.samples_per_pixel, @intCast(ctx.mut.framebuffer.num_cols), @intCast(ctx.mut.framebuffer.num_rows), .owen_fast, seed) catch @panic("Failed to initialized sobol sampler");
+    // const spp = std.math.ceilPowerOfTwo(usize, ctx.samples_per_pixel) 
+    //     catch @panic("Failed to initialize sobol sampler");
+    var sampler = smpl.SobolSampler(Real).initSampler(
+        ctx.samples_per_pixel,
+        @intCast(ctx.mut.framebuffer.num_cols),
+        @intCast(ctx.mut.framebuffer.num_rows),
+        .owen_fast,
+        seed,
+    ) catch @panic("Failed to initialized sobol sampler");
     // var sampler = smpl.StratifiedSampler(Real).initSampler(
     //     rand,
     //     ctx.sqrt_spp,
@@ -138,7 +143,13 @@ fn rayColorLine(ctx: RenderThreadContext) void {
 
         for (0..ctx.samples_per_pixel) |sample_idx| {
             var ray = sampleRay(rand, &ctx, col_idx, sample_idx, &sampler);
-            color += pixel_color_scale * rayColor(ctx.entity, &ray, ctx.max_ray_bounce_depth, ctx.background_color);
+            color += rayColor(
+                ctx.entity, 
+                &ray, 
+                ctx.max_ray_bounce_depth, 
+                ctx.background_color, 
+                ctx.important_entity,
+            ) * pixel_color_scale;
         }
 
         // framebuffer write
@@ -191,7 +202,13 @@ fn sampleDefocusDisk(rand: std.Random, ctx: *const RenderThreadContext) Vec3 {
 }
 
 /// Computes the pixel color for the scene.
-fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_color: Color) Color {
+fn rayColor(
+    entity: *const IEntity,
+    ray: *const Ray,
+    depth: usize,
+    background_color: Color,
+    important_entity: ?*const IEntity,
+) Color {
     const tracy_zone = ztracy.ZoneN(@src(), "rayColor");
     defer tracy_zone.End();
 
@@ -218,6 +235,7 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
 
     var ray_scattered: Ray = undefined;
     var attenuation_color = math.vec3(1, 1, 1);
+    var pdf_value: Real = 0.0;
     var ctx_scatter = ScatterContext{
         .random = rng.getThreadRng(),
         .ray_incoming = ray,
@@ -226,6 +244,7 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
         .mut = .{
             .ray_scattered = &ray_scattered,
             .attenuation = &attenuation_color,
+            .pdf_value = &pdf_value,
         },
     };
 
@@ -233,14 +252,66 @@ fn rayColor(entity: *const IEntity, ray: *const Ray, depth: usize, background_co
     var scatter_color = math.vec3(0, 0, 0);
     if (record.material) |material| {
         // Emissive light sources.
-        emission_color = material.emitted(record.tex_uv, &record.point);
+        emission_color = material.emitted(&record, record.tex_uv);
 
         // Surface scattering.
         // Updates: hit_record, ray_scattered, attenuation
         if (!material.scatter(&ctx_scatter)) {
             return emission_color;
         }
-        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color) * attenuation_color;
+
+        if (important_entity) |e| {
+            var entity_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, e, record.point);
+            ray_scattered = Ray{
+                .origin = record.point,
+                .direction = entity_pdf.generate(),
+                .time = ray.time,
+            };
+            pdf_value = entity_pdf.value(ray_scattered.direction);
+        } else {
+            var surface_pdf = pdf.CosinePdf.initPdf(ctx_scatter.random, record.normal);
+            ray_scattered = Ray{
+                .origin = record.point,
+                .direction = surface_pdf.generate(),
+                .time = ray.time,
+            };
+            pdf_value = surface_pdf.value(ray_scattered.direction);
+        }
+
+        // // TODO: hack in light importance sampling
+        // const on_light = math.vec3(
+        //     ctx_scatter.random.float(math.Real) * (343.0 - 213.0) + 213.0,
+        //     554,
+        //     ctx_scatter.random.float(math.Real) * (332.0 - 227.0) + 227.0,
+        // );
+        // var to_light = on_light - record.point;
+        // const dist_sq = math.dot(to_light, to_light);
+        // to_light = math.normalize(to_light);
+
+        // if (math.dot(to_light, record.normal) < 0) {
+        //     return emission_color;
+        // }
+
+        // const light_area = (343.0 - 213.0) * (332.0 - 227.0);
+        // const light_cos = @abs(to_light[1]);
+        // if (light_cos < 1e-6) {
+        //     return emission_color;
+        // }
+
+        // pdf_value = dist_sq / (light_cos * light_area);
+        // ray_scattered = Ray{
+        //     .origin = record.point,
+        //     .direction = to_light,
+        //     .time = ray.time,
+        // };
+
+        // importance sampling density function
+        const scattering_pdf = material.scatteringPdf(&ctx_scatter);
+        // pdf_value = scattering_pdf;
+
+        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color, important_entity);
+        scatter_color *= (attenuation_color * math.vec3s(scattering_pdf));
+        scatter_color /= math.vec3s(pdf_value);
     }
 
     return emission_color + scatter_color;

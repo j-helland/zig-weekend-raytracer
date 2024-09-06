@@ -45,6 +45,46 @@ pub const Axis = enum(u2) {
     }
 };
 
+pub const OrthoBasis = struct {
+    const Self = @This();
+
+    pub const OrthoAxis = enum { u, v, w };
+
+    basis: std.enums.EnumArray(OrthoAxis, Vec3),
+
+    pub fn init(n: Vec3) Self {
+        const w = normalize(n);
+        // pick a direction that isn't parallel to w
+        const a = if (@abs(w[1]) > 0.9) vec3(1, 0, 0) else vec3(0, 1, 0);
+        const u = normalize(cross(w, a));
+        const v = cross(w, u);
+
+        return initFromVectors(u, v, w);
+    }
+
+    pub fn initFromVectors(u: Vec3, v: Vec3, w: Vec3) Self {
+        var self = Self{ .basis = std.enums.EnumArray(OrthoAxis, Vec3).initUndefined() };
+
+        self.basis.set(.u, u);
+        self.basis.set(.v, v);
+        self.basis.set(.w, w);
+
+        return self;
+    }
+
+    pub fn get(self: *const Self, axis: OrthoAxis) Vec3 {
+        return self.basis.get(axis);
+    }
+
+    pub fn transform(self: *const Self, v: Vec3) Vec3 {
+        return (
+            self.get(.u) * vec3s(v[0]) 
+            + self.get(.v) * vec3s(v[1]) 
+            + self.get(.w) * vec3s(v[2])
+        );
+    }
+};
+
 /// Create a Vec3 filled with a scalar value. 
 pub inline fn vec3s(x: Real) Vec3 {
     return @splat(x);

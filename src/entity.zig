@@ -54,6 +54,26 @@ pub const IEntity = union(enum) {
             inline else => |*e| &e.aabb,
         };
     }
+
+    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+        return switch (self.*) {
+            inline else => |*e| 
+                if (std.meta.hasMethod(@TypeOf(e.*), "pdfValue"))
+                    e.pdfValue(origin, direction)
+                else
+                    0.0,
+        };
+    }
+
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+        return switch (self.*) {
+            inline else => |*e|
+                if (std.meta.hasMethod(@TypeOf(e.*), "sampleDirectionToSurface"))
+                    e.sampleDirectionToSurface(rand, origin)
+                else
+                    vec3(1, 0, 0),
+        };
+    }
 };
 
 pub const Translate = struct {
@@ -403,13 +423,15 @@ pub const QuadEntity = struct {
 
     // Parallelogram parameterization.
     start_point: Point3,
-    axis1: Vec3,
-    axis2: Vec3,
-    axis3: Vec3,
+    basis: math.OrthoBasis,
+    // axis1: Vec3,
+    // axis2: Vec3,
+    // axis3: Vec3,
 
     // containing plane
     normal: Vec3,
     offset: Real,
+    area: Real,
 
     // Misc.
     material: *const IMaterial,
@@ -436,12 +458,14 @@ pub const QuadEntity = struct {
         const entity = try entity_pool.create();
         entity.* = IEntity{ .quad = Self{
             .start_point = start,
-            .axis1 = axis1,
-            .axis2 = axis2,
-            .axis3 = axis3,
+            .basis = math.OrthoBasis.initFromVectors(axis1, axis2, axis3),
+            // .axis1 = axis1,
+            // .axis2 = axis2,
+            // .axis3 = axis3,
 
             .normal = normal_unit,
-            .offset = offset,
+            .offset = offset,            
+            .area = math.length(normal),  // recall: ||a x b|| is area of parallelogram spanned by a and b
 
             .material = material,
             .aabb = bbox,
@@ -461,8 +485,8 @@ pub const QuadEntity = struct {
 
         const hit_point = ctx.ray.at(t);
         const planar_hit_point = hit_point - self.start_point;
-        const alpha = math.dot(self.axis3, math.cross(planar_hit_point, self.axis2));
-        const beta = math.dot(self.axis3, math.cross(self.axis1, planar_hit_point));
+        const alpha = math.dot(self.basis.get(.w), math.cross(planar_hit_point, self.basis.get(.v)));
+        const beta = math.dot(self.basis.get(.w), math.cross(self.basis.get(.u), planar_hit_point));
 
         if (!isInteriorPoint(alpha, beta)) return false;
 
@@ -473,6 +497,30 @@ pub const QuadEntity = struct {
         hit_record.tex_uv = vec2(alpha, beta);
 
         return true;
+    }
+
+    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+        const ctx = HitContext{
+            .ray = &Ray{ .origin = origin, .direction = direction },
+            .trange = Interval(Real){ .min = 1e-3, .max = std.math.inf(Real) },
+        };
+        var record = HitRecord{};
+        if (!self.hit(&ctx, &record)) {
+            return 0.0;
+        }
+
+        const dir_length_sq = math.dot(direction, direction);
+        const dist_sq = record.t * record.t * dir_length_sq;
+        const cos = @abs(math.dot(direction, record.normal)) / @sqrt(dir_length_sq);
+
+        return dist_sq / (cos * self.area);
+    }
+
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+        const u = math.vec3s(rand.float(Real)) * self.basis.get(.u);
+        const v = math.vec3s(rand.float(Real)) * self.basis.get(.v);
+        const p = self.start_point + u + v;
+        return p - origin;
     }
 
     inline fn isInteriorPoint(alpha: Real, beta: Real) bool {

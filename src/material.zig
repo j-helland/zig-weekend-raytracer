@@ -6,7 +6,6 @@ const ITexture = @import("texture.zig").ITexture;
 
 const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("ray.zig").HitRecord;
-const ScatterContext = @import("ray.zig").ScatterContext;
 
 const math = @import("math.zig");
 const Real = math.Real;
@@ -17,25 +16,40 @@ const vec3 = math.vec3;
 
 const rng = @import("rng.zig");
 
+pub const ScatterContext = struct {
+    /// Keep all mutable fields here for clarity.
+    mut: struct {
+        attenuation: *Color, 
+        ray_scattered: *Ray,
+        pdf_value: *Real,
+    },
+
+    random: std.Random,
+    ray_incoming: *const Ray, 
+    hit_record: *const HitRecord,     
+};
+
 /// INTERFACE
 pub const IMaterial = union(enum) {
     const Self = @This();
 
     lambertian: LambertianMaterial,
+    isotropic: IsotropicMaterial,
     metal: MetalMaterial,
     dielectric: DielectricMaterial,
     diffuse_emissive: DiffuseLightEmissiveMaterial,
 
-    pub fn emitted(self: *const Self, uv: Vec2, point: *const Point3) Color {
+    pub fn emitted(self: *const Self, hit_record: *const HitRecord, uv: Vec2) Color {
         const tracy_zone = ztracy.ZoneN(@src(), "Material::emitted");
         defer tracy_zone.End();
 
         return switch (self.*) {
-            inline else => |*m| if (std.meta.hasMethod(@TypeOf(m.*), "emitted"))
-                m.emitted(uv, point)
-            else
-                // Default no light emitted.
-                vec3( 0, 0, 0 ),
+            inline else => |*m| 
+                if (std.meta.hasMethod(@TypeOf(m.*), "emitted"))
+                    m.emitted(hit_record, uv)
+                else
+                    // Default no light emitted.
+                    vec3( 0, 0, 0 ),
         };
     }
 
@@ -44,7 +58,24 @@ pub const IMaterial = union(enum) {
         defer tracy_zone.End();
 
         return switch (self.*) {
-            inline else => |*m| m.scatter(ctx),
+            inline else => |*m| 
+                if (std.meta.hasMethod(@TypeOf(m.*), "scatter"))
+                    m.scatter(ctx)
+                else
+                    false,
+        };
+    }
+
+    pub fn scatteringPdf(self: *const Self, ctx: *ScatterContext) Real {
+        const tracy_zone = ztracy.ZoneN(@src(), "Material::scatteringPdf");
+        defer tracy_zone.End();
+
+        return switch (self.*) {
+            inline else => |*m| 
+                if (std.meta.hasMethod(@TypeOf(m.*), "scatteringPdf"))
+                    m.scatteringPdf(ctx)
+                else
+                    0.0,
         };
     }
 };
@@ -58,18 +89,14 @@ pub const DiffuseLightEmissiveMaterial = struct {
         return IMaterial{ .diffuse_emissive = Self{ .texture = texture } };
     }
 
-    pub fn emitted(self: *const Self, uv: Vec2, point: *const Point3) Color {
+    pub fn emitted(self: *const Self, hit_record: *const HitRecord, uv: Vec2) Color {
         const tracy_zone = ztracy.ZoneN(@src(), "DiffuseLightEmissiveMaterial::emitted");
         defer tracy_zone.End();
 
-        return self.texture.value(uv, point);
-    }
+        // Backface of lights do not emit into scene
+        if (!hit_record.b_front_face) return vec3(0, 0, 0);
 
-    /// noop to satisfy interface
-    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
-        _ = self;
-        _ = ctx;
-        return false;
+        return self.texture.value(uv, &hit_record.point);
     }
 };
 
@@ -86,21 +113,53 @@ pub const LambertianMaterial = struct {
         const tracy_zone = ztracy.ZoneN(@src(), "Lambertian::scatter");
         defer tracy_zone.End();
 
-        var scatter_direction = ctx.hit_record.normal + rng.sampleUnitSphere(ctx.random);
-
-        // handle degenerate scattering direction
-        if (math.isVec3NearZero(scatter_direction)) {
-            scatter_direction = ctx.hit_record.normal;
-        }
+        const basis = math.OrthoBasis.init(ctx.hit_record.normal);
+        const scatter_direction = basis.transform(rng.sampleCosineDirectionZ(ctx.random));
 
         const origin = ctx.hit_record.point;
         ctx.mut.ray_scattered.* = Ray{
             .origin = origin,
-            .direction = scatter_direction,
+            .direction = math.normalize(scatter_direction),
             .time = ctx.ray_incoming.time,
         };
         ctx.mut.attenuation.* = self.texture.value(ctx.hit_record.tex_uv, &origin);
+        ctx.mut.pdf_value.* = math.dot(basis.get(.w), ctx.mut.ray_scattered.direction) / std.math.pi;
         return true;
+    }
+
+    pub inline fn scatteringPdf(_: *const Self, ctx: *const ScatterContext) Real {
+        const light_dir = math.normalize(ctx.mut.ray_scattered.direction);
+        const cos_theta = math.dot(ctx.hit_record.normal, light_dir);
+        return @max(0.0, cos_theta / std.math.pi);
+    }
+};
+
+pub const IsotropicMaterial = struct {
+    const Self = @This();
+
+    texture: *const ITexture,
+
+    pub fn initMaterial(texture: *const ITexture) IMaterial {
+        return IMaterial{ .isotropic = Self{ .texture = texture } };
+    }
+
+    pub fn scatter(self: *const Self, ctx: *ScatterContext) bool {
+        const tracy_zone = ztracy.ZoneN(@src(), "Isotropic::scatter");
+        defer tracy_zone.End();
+
+        const origin = ctx.hit_record.point;
+        ctx.mut.ray_scattered.* = Ray{
+            .origin = origin,
+            .direction = rng.sampleUnitSphere(ctx.random),
+            .time = ctx.ray_incoming.time,
+        };
+        ctx.mut.attenuation.* = self.texture.value(ctx.hit_record.tex_uv, &origin);
+        ctx.mut.pdf_value.* = 1.0 / (4.0 * std.math.pi);
+        return true;
+    }
+
+    pub inline fn scatteringPdf(_: *const Self, _: *const ScatterContext) Real {
+        return 1.0 / (4.0 * std.math.pi);
     }
 };
 

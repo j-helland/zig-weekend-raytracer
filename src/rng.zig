@@ -103,3 +103,16 @@ pub fn sampleUnitHemisphere(rng: std.Random, normal: Vec3) Vec3 {
     const v = sampleUnitSphere(rng);
     return if (math.dot(normal, v) > 0.0) v else -v;
 }
+
+/// Samples a direction weighted by cos(theta), where theta is the angle from the Z axis.
+pub fn sampleCosineDirectionZ(rng: std.Random) Vec3 {
+    const r1 = rng.float(math.Real);
+    const r2 = rng.float(math.Real);
+
+    const phi = 2.0 * std.math.pi * r1;
+    const x = @cos(phi) * @sqrt(r2);
+    const y = @sin(phi) * @sqrt(r2);
+    const z = @sqrt(1.0 - r2);
+
+    return math.vec3(x, y, z);
+}
