@@ -14,7 +14,7 @@ const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("ray.zig").HitRecord;
 const HitContext = @import("ray.zig").HitContext;
 
-const ScatterContext = @import("material.zig").ScatterContext;
+const ScatterRecord = @import("material.zig").ScatterRecord;
 
 const Camera = @import("camera.zig").Camera;
 const Viewport = @import("camera.zig").Viewport;
@@ -34,7 +34,7 @@ pub const Renderer = struct {
     background_color: Color,
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
-    important_entity: ?*const IEntity = null,
+    light_entities: ?*const IEntity = null,
 
     pub fn render(self: *const Self, camera: *const Camera, entity: *const IEntity, framebuffer: *Framebuffer) !void {
         const tracy_zone = ztracy.ZoneN(@src(), "Renderer::render");
@@ -50,7 +50,7 @@ pub const Renderer = struct {
 
             .samples_per_pixel = self.samples_per_pixel,
             .max_ray_bounce_depth = self.max_ray_bounce_depth,
-            .important_entity = self.important_entity,
+            .light_entities = self.light_entities,
 
             .entity = entity,
             .camera_position = camera.position,
@@ -99,7 +99,7 @@ const RenderThreadContext = struct {
     // Raytracing parameters.
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
-    important_entity: ?*const IEntity,
+    light_entities: ?*const IEntity,
 
     // View
     camera_position: Point3,
@@ -121,7 +121,7 @@ fn rayColorLine(ctx: RenderThreadContext) void {
     const rand = rng.getThreadRng();
 
     const seed = rand.int(u32);
-    // const spp = std.math.ceilPowerOfTwo(usize, ctx.samples_per_pixel) 
+    // const spp = std.math.ceilPowerOfTwo(usize, ctx.samples_per_pixel)
     //     catch @panic("Failed to initialize sobol sampler");
     var sampler = smpl.SobolSampler(Real).initSampler(
         ctx.samples_per_pixel,
@@ -144,11 +144,11 @@ fn rayColorLine(ctx: RenderThreadContext) void {
         for (0..ctx.samples_per_pixel) |sample_idx| {
             var ray = sampleRay(rand, &ctx, col_idx, sample_idx, &sampler);
             color += rayColor(
-                ctx.entity, 
-                &ray, 
-                ctx.max_ray_bounce_depth, 
-                ctx.background_color, 
-                ctx.important_entity,
+                ctx.entity,
+                &ray,
+                ctx.max_ray_bounce_depth,
+                ctx.background_color,
+                ctx.light_entities,
             ) * pixel_color_scale;
         }
 
@@ -207,7 +207,7 @@ fn rayColor(
     ray: *const Ray,
     depth: usize,
     background_color: Color,
-    important_entity: ?*const IEntity,
+    light_entities: ?*const IEntity,
 ) Color {
     const tracy_zone = ztracy.ZoneN(@src(), "rayColor");
     defer tracy_zone.End();
@@ -233,18 +233,14 @@ fn rayColor(
         return background_color;
     }
 
-    var ray_scattered: Ray = undefined;
     var attenuation_color = math.vec3(1, 1, 1);
-    var pdf_value: Real = 0.0;
-    var ctx_scatter = ScatterContext{
+    var ctx_scatter = ScatterRecord{
         .random = rng.getThreadRng(),
         .ray_incoming = ray,
         .hit_record = &record,
 
         .mut = .{
-            .ray_scattered = &ray_scattered,
             .attenuation = &attenuation_color,
-            .pdf_value = &pdf_value,
         },
     };
 
@@ -260,50 +256,29 @@ fn rayColor(
             return emission_color;
         }
 
-        std.debug.assert(important_entity != null);
-        const entity_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, important_entity.?, record.point);
-        const cosine_pdf = pdf.CosinePdf.initPdf(ctx_scatter.random, record.normal);
-        const surface_pdf = pdf.MixturePdf.initPdf(ctx_scatter.random, &entity_pdf, &cosine_pdf);
+        if (ctx_scatter.mut.ray_specular) |*ray_specular| {
+            return attenuation_color * rayColor(entity, ray_specular, depth - 1, background_color, light_entities);
+        }
 
-        ray_scattered = Ray{
+        // TODO
+        std.debug.assert(light_entities != null);
+        std.debug.assert(ctx_scatter.mut.pdf != null);
+        std.debug.assert(ctx_scatter.mut.ray_specular == null);
+
+        const light_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, light_entities.?, record.point);
+        const surface_pdf = pdf.MixturePdf.initPdf(ctx_scatter.random, &light_pdf, &ctx_scatter.mut.pdf.?);
+
+        const ray_scattered = Ray{
             .origin = record.point,
             .direction = surface_pdf.generate(),
             .time = ray.time,
         };
-        pdf_value = surface_pdf.value(ray_scattered.direction);
-
-        // // TODO: hack in light importance sampling
-        // const on_light = math.vec3(
-        //     ctx_scatter.random.float(math.Real) * (343.0 - 213.0) + 213.0,
-        //     554,
-        //     ctx_scatter.random.float(math.Real) * (332.0 - 227.0) + 227.0,
-        // );
-        // var to_light = on_light - record.point;
-        // const dist_sq = math.dot(to_light, to_light);
-        // to_light = math.normalize(to_light);
-
-        // if (math.dot(to_light, record.normal) < 0) {
-        //     return emission_color;
-        // }
-
-        // const light_area = (343.0 - 213.0) * (332.0 - 227.0);
-        // const light_cos = @abs(to_light[1]);
-        // if (light_cos < 1e-6) {
-        //     return emission_color;
-        // }
-
-        // pdf_value = dist_sq / (light_cos * light_area);
-        // ray_scattered = Ray{
-        //     .origin = record.point,
-        //     .direction = to_light,
-        //     .time = ray.time,
-        // };
 
         // importance sampling density function
-        const scattering_pdf = material.scatteringPdf(&ctx_scatter);
-        // pdf_value = scattering_pdf;
+        const scattering_pdf = material.scatteringPdf(&ctx_scatter, &ray_scattered);
+        const pdf_value = surface_pdf.value(ray_scattered.direction);
 
-        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color, important_entity);
+        scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color, light_entities);
         scatter_color *= (attenuation_color * math.vec3s(scattering_pdf));
         scatter_color /= math.vec3s(pdf_value);
     }

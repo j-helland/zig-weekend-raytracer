@@ -74,13 +74,28 @@ fn encodeColor(_color: Color) [3]u8 {
     const rgb_max = 256.0;
     const intensity = Interval(Real){ .min = 0.0, .max = 0.999 };
 
-    const color = math.gammaCorrection(_color);
+    // Hack to resolve pixel acne from NaN issues
+    var color = discardNaNs(_color);
+    color = math.gammaCorrection(color);
 
     const ir = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[0])));
     const ig = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[1])));
     const ib = @as(u8, @intFromFloat(rgb_max * intensity.clamp(color[2])));
 
     return .{ir, ig, ib};
+}
+
+inline fn discardNaNs(color: Color) Color {
+    return math.vec3(
+        clampNaN(color[0]),
+        clampNaN(color[1]),
+        clampNaN(color[2]),
+    );
+}
+
+inline fn clampNaN(x: Real) Real {
+    if (std.math.isNan(x)) return 0;
+    return x;
 }
 
 fn sizeOfLine(pixel: *const [3]u8) usize {

@@ -321,12 +321,12 @@ fn cornellBox(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer)
     const texture_light = SolidColorTexture.initTexture(vec3(15, 15, 15));
 
     // ---- materials ----
-    // const material_red = LambertianMaterial.initMaterial(&texture_red);
-    // const material_white = LambertianMaterial.initMaterial(&texture_white);
-    // const material_green = LambertianMaterial.initMaterial(&texture_green);
-    const material_red = IsotropicMaterial.initMaterial(&texture_red);
-    const material_white = IsotropicMaterial.initMaterial(&texture_white);
-    const material_green = IsotropicMaterial.initMaterial(&texture_green);
+    const material_red = LambertianMaterial.initMaterial(&texture_red);
+    const material_white = LambertianMaterial.initMaterial(&texture_white);
+    const material_green = LambertianMaterial.initMaterial(&texture_green);
+    // const material_red = IsotropicMaterial.initMaterial(&texture_red);
+    // const material_white = IsotropicMaterial.initMaterial(&texture_white);
+    // const material_green = IsotropicMaterial.initMaterial(&texture_green);
     const material_light = DiffuseLightEmissiveMaterial.initMaterial(&texture_light);
 
     // ---- entities ----
@@ -353,9 +353,16 @@ fn cornellBox(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer)
     //             &MetalMaterial.initMaterial(vec3(0.7, 0.6, 0.5), 0.0))));
 
     // interior boxes
-    const box1 = try Translate.initEntity(ctx.entity_pool, vec3(130, 0, 65), try RotateY.initEntity(ctx.entity_pool, -18.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 165, 165), &material_white)));
-    scene.collection.addAssumeCapacity(box1);
+    // const box1 = try Translate.initEntity(ctx.entity_pool, vec3(130, 0, 65), try RotateY.initEntity(ctx.entity_pool, -18.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 165, 165), &material_white)));
+    // const box1 = try Translate.initEntity(ctx.entity_pool, vec3(130, 0, 65), try RotateY.initEntity(ctx.entity_pool, -18.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 165, 165), &material_white)));
+    // scene.collection.addAssumeCapacity(box1);
 
+    const material_glass = DielectricMaterial.initMaterial(1.5);
+    const glass_sphere = try SphereEntity.initEntity(ctx.entity_pool, vec3(190, 90, 190), 90, &material_glass);
+    scene.collection.addAssumeCapacity(glass_sphere);
+
+    // const tmp_metal = MetalMaterial.initMaterial(vec3(0.8, 0.85, 0.88), 0);
+    // const box2 = try Translate.initEntity(ctx.entity_pool, vec3(265, 0, 295), try RotateY.initEntity(ctx.entity_pool, 15.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 330, 165), &tmp_metal)));
     const box2 = try Translate.initEntity(ctx.entity_pool, vec3(265, 0, 295), try RotateY.initEntity(ctx.entity_pool, 15.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 330, 165), &material_white)));
     scene.collection.addAssumeCapacity(box2);
 
@@ -364,6 +371,10 @@ fn cornellBox(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer)
     scene.collection.addAssumeCapacity(light);
 
     try scene.collection.createBvhTree(ctx.entity_pool);
+
+    var scene_lights = try EntityCollection.initEntity(ctx.entity_pool, ctx.allocator);
+    try scene_lights.collection.add(glass_sphere);
+    try scene_lights.collection.add(light);
 
     // ---- camera ----
     const fov_vertical = 40.0;
@@ -384,7 +395,7 @@ fn cornellBox(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer)
     ctx.timer.logInfoElapsed("scene initialized");
 
     // ---- render ----
-    renderer.important_entity = light;
+    renderer.light_entities = scene_lights;
     try renderer.render(&camera, scene, framebuffer);
     ctx.timer.logInfoElapsed("scene rendered");
 }

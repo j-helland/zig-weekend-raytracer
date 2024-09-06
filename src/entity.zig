@@ -377,6 +377,24 @@ pub const EntityCollection = struct {
 
         return b_hit_anything;
     }
+
+    /// Evenly weighted sum of surface PDFs.
+    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+        const weight = 1.0 / @as(Real, @floatFromInt(self.entities.items.len));
+        var sum: Real = 0.0;
+        for (self.entities.items) |entity| {
+            sum += weight * entity.pdfValue(origin, direction);
+        }
+        return sum;
+    }
+
+    /// Pick a random entity.
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+        std.debug.assert(self.entities.items.len > 0);
+
+        const idx = rand.intRangeAtMost(usize, 0, self.entities.items.len - 1);
+        return self.entities.items[idx].sampleDirectionToSurface(rand, origin);
+    }
 };
 
 /// composite of quads arranged in a box; contained in EntityCollection
@@ -621,6 +639,34 @@ pub const SphereEntity = struct {
         return true;
     }
 
+    /// NOTE: sphere assumed to be stationary
+    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+        std.debug.assert(!self.b_is_moving);
+
+        const ctx = HitContext{
+            .ray = &Ray{ .origin = origin, .direction = direction },
+            .trange = Interval(Real){ .min = 1e-3, .max = std.math.inf(Real) },
+        };
+        var hit_record = HitRecord{};
+        if (!self.hit(&ctx, &hit_record)) {
+            return 0.0;
+        }
+
+        const diff = self.center - origin;
+        const dist_sq = math.dot(diff, diff);
+        const cos_theta_max = @sqrt(1.0 - self.radius * self.radius / dist_sq);
+        const solid_angle = 2.0 * std.math.pi * (1.0 - cos_theta_max);
+
+        return 1.0 / solid_angle;
+    }
+
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+        const direction = self.center - origin;
+        const dist_sq = math.dot(direction, direction);
+        const basis = math.OrthoBasis.init(direction);
+        return basis.transform(randomToSphere(rand, self.radius, dist_sq));
+    }
+
     fn move(self: *const Self, time: Real) Point3 {
         // lerp towards target; assume time is in [0,1]
         return self.center + math.vec3s(time) * self.movement_direction;
@@ -634,5 +680,18 @@ pub const SphereEntity = struct {
             phi / (2 * std.math.pi),
             theta / std.math.pi,
         );
+    }
+
+    fn randomToSphere(rand: std.Random, radius: Real, dist_sq: Real) Vec3 {
+        const r1 = rand.float(Real);
+        const r2 = rand.float(Real);
+        const z = 1.0 + r2 * (@sqrt(1.0 - radius * radius / dist_sq) - 1.0);
+
+        const phi = 2.0 * std.math.pi * r1;
+        const sz2 = @sqrt(1.0 - z*z);
+        const x = @cos(phi) * sz2;
+        const y = @sin(phi) * sz2;
+
+        return math.vec3(x, y, z);
     }
 };
