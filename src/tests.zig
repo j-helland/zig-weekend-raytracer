@@ -15,4 +15,5 @@ comptime {
     _ = @import("material.zig");
     _ = @import("timer.zig");
     _ = @import("aabb.zig");
+    _ = @import("sampler.zig");
 }
