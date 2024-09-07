@@ -85,6 +85,51 @@ pub const OrthoBasis = struct {
     }
 };
 
+/// For MaxMult method from listing 5 of robust BVH traversal paper: 
+/// https://blogs.autodesk.com/media-and-entertainment/wp-content/uploads/sites/162/jcgt2013_robust_BVH-revised.pdf
+/// This is a "crude" approximation that adds up to 4 ULPs, which can be excessive. If a tighter bound is required (e.g. 2 ULPs), use addUlpMagnitude below.
+pub inline fn maxMultFactor(comptime T: type) T {
+    return switch (T) {
+        f32 => 1.00000024,
+        f64 => 1.0000000000000004,
+        else => @compileError("Invalid float type: " ++ @typeName(T)),
+    };
+}
+
+/// Listing 3 of https://blogs.autodesk.com/media-and-entertainment/wp-content/uploads/sites/162/jcgt2013_robust_BVH-revised.pdf
+pub fn addUlpMagnitude(
+    x: anytype, 
+    ulps: std.meta.Int(.unsigned, @bitSizeOf(@TypeOf(x)))
+) @TypeOf(x) {
+    const T = @TypeOf(x);
+    if (@typeInfo(T) != .Float) {
+        @compileError("Invalid float type: " ++ @typeName(T));
+    }
+    const UT = std.meta.Int(.unsigned, @bitSizeOf(T));
+
+    if (!std.math.isFinite(x)) return x;
+    const bits = @as(UT, @bitCast(x));
+    return @as(T, @bitCast(bits + ulps));
+}
+test "addUlpMagnitude" {
+    {
+        const x: f32 = 0.0;
+        try std.testing.expectEqual(x, addUlpMagnitude(x, 0));
+        try std.testing.expect(x != addUlpMagnitude(x, 1));
+        try std.testing.expectApproxEqAbs(x, addUlpMagnitude(x, 1), std.math.floatEps(@TypeOf(x)));
+        try std.testing.expect(x != addUlpMagnitude(x, 2));
+        try std.testing.expectApproxEqAbs(x, addUlpMagnitude(x, 2), std.math.floatEps(@TypeOf(x)));
+    }
+    {
+        const x: f64 = 0.0;
+        try std.testing.expectEqual(x, addUlpMagnitude(x, 0));
+        try std.testing.expect(x != addUlpMagnitude(x, 1));
+        try std.testing.expectApproxEqAbs(x, addUlpMagnitude(x, 1), std.math.floatEps(@TypeOf(x)));
+        try std.testing.expect(x != addUlpMagnitude(x, 2));
+        try std.testing.expectApproxEqAbs(x, addUlpMagnitude(x, 2), std.math.floatEps(@TypeOf(x)));
+    }
+}
+
 /// Create a Vec3 filled with a scalar value. 
 pub inline fn vec3s(x: Real) Vec3 {
     return @splat(x);

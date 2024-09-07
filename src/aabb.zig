@@ -91,6 +91,12 @@ pub const AABB = struct {
         math.rightPad(Vec3, &tmin, 0);
         math.rightPad(Vec3, &tmax, 1);
 
+        // MaxMult method to add 4 ULPs, as used by Arnold: https://blogs.autodesk.com/media-and-entertainment/wp-content/uploads/sites/162/jcgt2013_robust_BVH-revised.pdf
+        // This is designed to avoid floating point precision issues near AABB boundaries, where 
+        // floating point rounding error can accumulate to create a false miss on the inequality below.
+        // This is faster than extracting @Vector components and directly adding ULPs.
+        tmax *= math.vec3s(math.maxMultFactor(Real));
+
         return @reduce(.And, tmax > tmin);
     }
 
