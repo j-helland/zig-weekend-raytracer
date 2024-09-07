@@ -105,18 +105,17 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(ctx: SceneContext, renderer: *Ren
                         textures.appendAssumeCapacity(tex.SolidColorTexture.initTexture(albedo));
                         materials.appendAssumeCapacity(LambertianMaterial.initMaterial(&textures.items[textures.items.len - 1]));
 
-                        // // Non-motion blurred entities.
-                        // try scene.collection.add(try SphereEntity.initEntity(
-                        //     &entity_pool, center, 0.2, &materials.items[materials.items.len - 1]));
+                        // Non-motion blurred entities.
+                        try scene.collection.add(try SphereEntity.initEntity(ctx.entity_pool, center, 0.2, &materials.items[materials.items.len - 1]));
 
-                        // Motion blurred entities.
-                        scene.collection.addAssumeCapacity(try SphereEntity.initEntityAnimated(
-                            ctx.entity_pool,
-                            center,
-                            center + vec3(0, rand.float(Real) * 0.5, 0),
-                            0.2,
-                            &materials.items[materials.items.len - 1],
-                        ));
+                        // // Motion blurred entities.
+                        // scene.collection.addAssumeCapacity(try SphereEntity.initEntityAnimated(
+                        //     ctx.entity_pool,
+                        //     center,
+                        //     center + vec3(0, rand.float(Real) * 0.5, 0),
+                        //     0.2,
+                        //     &materials.items[materials.items.len - 1],
+                        // ));
                     } else if (choose_mat < 0.95) {
                         // metal
                         const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
@@ -126,7 +125,8 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(ctx: SceneContext, renderer: *Ren
                     } else {
                         // glass
                         materials.appendAssumeCapacity(DielectricMaterial.initMaterial(1.5));
-                        scene.collection.addAssumeCapacity(try SphereEntity.initEntity(ctx.entity_pool, center, 0.2, &materials.items[materials.items.len - 1]));
+                        const glass_sphere = try SphereEntity.initEntity(ctx.entity_pool, center, 0.2, &materials.items[materials.items.len - 1]);
+                        scene.collection.addAssumeCapacity(glass_sphere);
                     }
                 }
             }
@@ -134,7 +134,8 @@ fn bigBountifulBodaciousBeautifulBouncingBalls(ctx: SceneContext, renderer: *Ren
     }
 
     const material1 = DielectricMaterial.initMaterial(1.5);
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(ctx.entity_pool, vec3(0, 1, 0), 1.0, &material1));
+    const big_glass_sphere = try SphereEntity.initEntity(ctx.entity_pool, vec3(0, 1, 0), 1.0, &material1);
+    scene.collection.addAssumeCapacity(big_glass_sphere);
 
     const material2 = LambertianMaterial.initMaterial(&texture_solid_brown);
     scene.collection.addAssumeCapacity(try SphereEntity.initEntity(ctx.entity_pool, vec3(-4, 1, 0), 1, &material2));
@@ -277,12 +278,14 @@ fn emissive(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer) !
     const texture_even = SolidColorTexture.initTexture(vec3(0.2, 0.3, 0.1));
     const texture_odd = SolidColorTexture.initTexture(vec3(0.9, 0.9, 0.9));
     const texture_ground = CheckerboardTexture.initTexture(0.32, &texture_even, &texture_odd);
-    const texture_light = SolidColorTexture.initTexture(vec3(4, 4, 4));
+    const texture_light_blue = SolidColorTexture.initTexture(vec3(1, 2, 4));
+    const texture_light_green = SolidColorTexture.initTexture(vec3(2.3, 4, 2.3));
 
     // ---- materials ----
     const material_glass = DielectricMaterial.initMaterial(1.5);
     const material_ground = LambertianMaterial.initMaterial(&texture_ground);
-    const material_light = DiffuseLightEmissiveMaterial.initMaterial(&texture_light);
+    const material_light_blue = DiffuseLightEmissiveMaterial.initMaterial(&texture_light_blue);
+    const material_light_green = DiffuseLightEmissiveMaterial.initMaterial(&texture_light_green);
 
     // ---- entities ----
     var scene = try EntityCollection.initEntity(ctx.entity_pool, ctx.allocator);
@@ -290,11 +293,22 @@ fn emissive(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer) !
     try scene.collection.entities.ensureTotalCapacity(5);
 
     scene.collection.addAssumeCapacity(try SphereEntity.initEntity(ctx.entity_pool, vec3(0, -1000, 0), 1000, &material_ground));
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(ctx.entity_pool, vec3(0, 2, 0), 1.5, &material_glass));
-    scene.collection.addAssumeCapacity(try QuadEntity.initEntity(ctx.entity_pool, vec3(3, 1, -2), vec3(2, 0, 0), vec3(0, 2, 0), &material_light));
-    scene.collection.addAssumeCapacity(try SphereEntity.initEntity(ctx.entity_pool, vec3(0, 7, 0), 1, &material_light));
+    const glass_sphere = try SphereEntity.initEntity(ctx.entity_pool, vec3(0, 2, 0), 1.5, &material_glass);
+    scene.collection.addAssumeCapacity(glass_sphere);
+
+    // lights
+    const light_quad = try QuadEntity.initEntity(ctx.entity_pool, vec3(3, 1, -2), vec3(2, 0, 0), vec3(0, 2, 0), &material_light_blue);
+    scene.collection.addAssumeCapacity(light_quad);
+    const light_sphere = try SphereEntity.initEntity(ctx.entity_pool, vec3(0, 7, 0), 1, &material_light_green);
+    scene.collection.addAssumeCapacity(light_sphere);
 
     try scene.collection.createBvhTree(ctx.entity_pool);
+
+    var scene_lights = try EntityCollection.initEntity(ctx.entity_pool, ctx.allocator);
+    defer scene_lights.deinit();
+    try scene_lights.collection.add(light_quad);
+    try scene_lights.collection.add(light_sphere);
+    try scene_lights.collection.add(glass_sphere);
 
     // ---- camera ----
     var camera = Camera.init(
@@ -309,6 +323,7 @@ fn emissive(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer) !
     ctx.timer.logInfoElapsed("scene initialized");
 
     // ---- render ----
+    renderer.light_entities = scene_lights;
     try renderer.render(&camera, scene, framebuffer);
     ctx.timer.logInfoElapsed("scene rendered");
 }
@@ -361,9 +376,9 @@ fn cornellBox(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer)
     const glass_sphere = try SphereEntity.initEntity(ctx.entity_pool, vec3(190, 90, 190), 90, &material_glass);
     scene.collection.addAssumeCapacity(glass_sphere);
 
-    // const tmp_metal = MetalMaterial.initMaterial(vec3(0.8, 0.85, 0.88), 0);
-    // const box2 = try Translate.initEntity(ctx.entity_pool, vec3(265, 0, 295), try RotateY.initEntity(ctx.entity_pool, 15.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 330, 165), &tmp_metal)));
-    const box2 = try Translate.initEntity(ctx.entity_pool, vec3(265, 0, 295), try RotateY.initEntity(ctx.entity_pool, 15.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 330, 165), &material_white)));
+    const tmp_metal = MetalMaterial.initMaterial(vec3(0.8, 0.85, 0.88), 0);
+    const box2 = try Translate.initEntity(ctx.entity_pool, vec3(265, 0, 295), try RotateY.initEntity(ctx.entity_pool, 15.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 330, 165), &tmp_metal)));
+    // const box2 = try Translate.initEntity(ctx.entity_pool, vec3(265, 0, 295), try RotateY.initEntity(ctx.entity_pool, 15.0, try ent.createBoxEntity(ctx.allocator, ctx.entity_pool, vec3(0, 0, 0), vec3(165, 330, 165), &material_white)));
     scene.collection.addAssumeCapacity(box2);
 
     // light
@@ -373,6 +388,7 @@ fn cornellBox(ctx: SceneContext, renderer: *Renderer, framebuffer: *Framebuffer)
     try scene.collection.createBvhTree(ctx.entity_pool);
 
     var scene_lights = try EntityCollection.initEntity(ctx.entity_pool, ctx.allocator);
+    defer scene_lights.deinit();
     try scene_lights.collection.add(glass_sphere);
     try scene_lights.collection.add(light);
 
@@ -543,12 +559,12 @@ pub fn main() !void {
     defer framebuffer.deinit();
 
     // Scene
-    // try bigBountifulBodaciousBeautifulBouncingBalls(ctx, &renderer, &framebuffer);
+    try bigBountifulBodaciousBeautifulBouncingBalls(ctx, &renderer, &framebuffer);
     // try checkeredSpheres(ctx, &renderer, &framebuffer);
     // try earth(ctx, &renderer, &framebuffer);
     // try quads(ctx, &renderer, &framebuffer);
     // try emissive(ctx, &renderer, &framebuffer);
-    try cornellBox(ctx, &renderer, &framebuffer);
+    // try cornellBox(ctx, &renderer, &framebuffer);
     // try finalScene(ctx, &renderer, &framebuffer);
 
     // ---- write ----

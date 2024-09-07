@@ -119,7 +119,6 @@ fn rayColorLine(ctx: RenderThreadContext) void {
     defer tracy_zone.End();
 
     const rand = rng.getThreadRng();
-
     const seed = rand.int(u32);
     // const spp = std.math.ceilPowerOfTwo(usize, ctx.samples_per_pixel)
     //     catch @panic("Failed to initialize sobol sampler");
@@ -130,12 +129,6 @@ fn rayColorLine(ctx: RenderThreadContext) void {
         .owen_fast,
         seed,
     ) catch @panic("Failed to initialized sobol sampler");
-    // var sampler = smpl.StratifiedSampler(Real).initSampler(
-    //     rand,
-    //     ctx.sqrt_spp,
-    //     ctx.recip_sqrt_spp,
-    // );
-    // var sampler = smpl.IndependentSampler(Real).initSampler(rand);
 
     const pixel_color_scale = math.vec3s(1.0 / @as(Real, @floatFromInt(ctx.samples_per_pixel)));
     for (ctx.col_range.min..ctx.col_range.max) |col_idx| {
@@ -250,37 +243,56 @@ fn rayColor(
         // Emissive light sources.
         emission_color = material.emitted(&record, record.tex_uv);
 
-        // Surface scattering.
-        // Updates: hit_record, ray_scattered, attenuation
+        // No scattering (e.g. emissive surface hit).
+        // This can modify the ctx_scatter.mut fields.
         if (!material.scatter(&ctx_scatter)) {
             return emission_color;
         }
 
+        // Material specifies no importance sampling (e.g. specular materials like mirrors).
         if (ctx_scatter.mut.ray_specular) |*ray_specular| {
+            std.debug.assert(material.isSpecular());
             return attenuation_color * rayColor(entity, ray_specular, depth - 1, background_color, light_entities);
         }
 
-        // TODO
-        std.debug.assert(light_entities != null);
-        std.debug.assert(ctx_scatter.mut.pdf != null);
-        std.debug.assert(ctx_scatter.mut.ray_specular == null);
-
-        const light_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, light_entities.?, record.point);
-        const surface_pdf = pdf.MixturePdf.initPdf(ctx_scatter.random, &light_pdf, &ctx_scatter.mut.pdf.?);
-
-        const ray_scattered = Ray{
+        // If no objects in the scene provide importance sampling PDFs, default to a cosine distribution oriented by the surface normal.
+        var ray_scattered = Ray{
             .origin = record.point,
-            .direction = surface_pdf.generate(),
+            .direction = undefined,
             .time = ray.time,
         };
+        const scatter_direction_pdf_value = if (light_entities) |lights| blk: {
+            std.debug.assert(ctx_scatter.mut.pdf != null);
+            std.debug.assert(ctx_scatter.mut.ray_specular == null);
 
-        // importance sampling density function
-        const scattering_pdf = material.scatteringPdf(&ctx_scatter, &ray_scattered);
-        const pdf_value = surface_pdf.value(ray_scattered.direction);
+            const light_pdf = pdf.EntityPdf.initPdf(ctx_scatter.random, lights, record.point);
+            const surface_pdf = pdf.MixturePdf.initPdf(ctx_scatter.random, &light_pdf, &ctx_scatter.mut.pdf.?);
 
+            ray_scattered.direction = surface_pdf.generate();
+            break :blk surface_pdf.value(ray_scattered.direction);
+
+        } else blk: {
+            const surface_pdf = pdf.CosinePdf.initPdf(ctx_scatter.random, record.normal);
+
+            ray_scattered.direction = surface_pdf.generate();
+            break :blk surface_pdf.value(ray_scattered.direction);
+        };
+
+        // importance sampled monte carlo estimate of rendering equation:
+        // color = emittance + \int_hemisphere BRDF * radiance_color * cos(theta)
+        //    where BRDF = (albedo * material_scatter_pdf) / cos(theta)
+        // => color = emittance + \int_hemisphere (albedo * material_scatter_pdf * radiance_color) / sampling_pdf
+        //
+        // - The hemisphere is oriented by the surface normal.
+        // - Emittance is directly taken from the material emittance function.
+        // - Radiance color is computed by the ray bouncing through the scene and collecting color.
+        // - Albedo is the attenuation color, which represents the probability of light being absorbed vs reflected.
         scatter_color = rayColor(entity, &ray_scattered, depth - 1, background_color, light_entities);
-        scatter_color *= (attenuation_color * math.vec3s(scattering_pdf));
-        scatter_color /= math.vec3s(pdf_value);
+
+        const scatter_position_pdf_value = material.scatteringPdf(&ctx_scatter, &ray_scattered);
+        scatter_color *= (attenuation_color * math.vec3s(scatter_position_pdf_value));
+
+        scatter_color /= math.vec3s(scatter_direction_pdf_value);
     }
 
     return emission_color + scatter_color;
