@@ -1,9 +1,5 @@
 const std = @import("std");
 
-const Real = @import("math.zig").Real;
-
-pub const INTERVAL_01 = Interval(Real){ .min = 0, .max = 1 };
-
 pub fn Interval(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -40,7 +36,7 @@ pub fn Interval(comptime T: type) type {
             return std.math.clamp(t, self.min, self.max);
         }
 
-        pub inline fn expand(self: *const Self, delta: Real) Self {
+        pub inline fn expand(self: *const Self, delta: T) Self {
             const padding = delta / 2;
             return Self{ .min = self.min - padding, .max = self.max + padding };
         }

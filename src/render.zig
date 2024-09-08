@@ -2,18 +2,13 @@ const std = @import("std");
 
 const ztracy = @import("ztracy");
 
-const math = @import("math.zig");
-const Real = @import("math.zig").Real;
-const Color = @import("math.zig").Vec3;
-const Point3 = @import("math.zig").Vec3;
-const Vec3 = @import("math.zig").Vec3;
+const math = @import("math/math.zig");
+const pdf = @import("pdf.zig");
 
-const Interval = @import("interval.zig").Interval;
+const SobolSampler = math.rng.sampler.SobolSampler;
 
-const Ray = @import("ray.zig").Ray;
-const HitRecord = @import("ray.zig").HitRecord;
-const HitContext = @import("ray.zig").HitContext;
-
+const HitRecord = @import("hitrecord.zig").HitRecord;
+const HitContext = @import("hitrecord.zig").HitContext;
 const ScatterRecord = @import("material.zig").ScatterRecord;
 
 const Camera = @import("camera.zig").Camera;
@@ -21,17 +16,12 @@ const Viewport = @import("camera.zig").Viewport;
 const Framebuffer = @import("camera.zig").Framebuffer;
 const IEntity = @import("entity.zig").IEntity;
 
-const rng = @import("rng.zig");
-
-const smpl = @import("sampler.zig");
-const pdf = @import("pdf.zig");
-
 pub const Renderer = struct {
     const Self = @This();
 
     thread_pool: *std.Thread.Pool,
-    clear_color: Color,
-    background_color: Color,
+    clear_color: math.Color,
+    background_color: math.Color,
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
     light_entities: ?*const IEntity = null,
@@ -94,35 +84,35 @@ const RenderThreadContext = struct {
     // Rendering surface parameters.
     // These define a range that each thread can operate on without race conditions.
     row_idx: usize = 0,
-    col_range: Interval(usize) = .{},
+    col_range: math.Interval(usize) = .{},
 
-    // Raytracing parameters.
+    // math.Raytracing parameters.
     samples_per_pixel: usize,
     max_ray_bounce_depth: usize,
     light_entities: ?*const IEntity,
 
     // View
-    camera_position: Point3,
+    camera_position: math.Point3,
     viewport: *const Viewport,
     entity: *const IEntity,
-    background_color: Color,
+    background_color: math.Color,
 
     b_is_depth_of_field: bool,
-    defocus_disk_u: Vec3,
-    defocus_disk_v: Vec3,
+    defocus_disk_u: math.Vec3,
+    defocus_disk_v: math.Vec3,
 };
 
-/// Raytraces a pixel line and writes the result into the framebuffer.
-/// Wrapper around rayColor function for use in multithreaded.
+/// math.Raytraces a pixel line and writes the result into the framebuffer.
+/// Wrapper around raymath.Color function for use in multithreaded.
 fn rayColorLine(ctx: RenderThreadContext) void {
-    const tracy_zone = ztracy.ZoneN(@src(), "rayColorLine");
+    const tracy_zone = ztracy.ZoneN(@src(), "raymath.ColorLine");
     defer tracy_zone.End();
 
-    const rand = rng.getThreadRng();
+    const rand = math.rng.getThreadRng();
     const seed = rand.int(u32);
     // const spp = std.math.ceilPowerOfTwo(usize, ctx.samples_per_pixel)
     //     catch @panic("Failed to initialize sobol sampler");
-    var sampler = smpl.SobolSampler(Real).initSampler(
+    var sampler = SobolSampler(math.Real).initSampler(
         ctx.samples_per_pixel,
         @intCast(ctx.mut.framebuffer.num_cols),
         @intCast(ctx.mut.framebuffer.num_rows),
@@ -130,7 +120,7 @@ fn rayColorLine(ctx: RenderThreadContext) void {
         seed,
     ) catch @panic("Failed to initialized sobol sampler");
 
-    const pixel_color_scale = math.vec3s(1.0 / @as(Real, @floatFromInt(ctx.samples_per_pixel)));
+    const pixel_color_scale = math.vec3s(1.0 / @as(math.Real, @floatFromInt(ctx.samples_per_pixel)));
     for (ctx.col_range.min..ctx.col_range.max) |col_idx| {
         var color = math.vec3(0, 0, 0);
 
@@ -156,9 +146,9 @@ fn sampleRay(
     ctx: *const RenderThreadContext,
     col_idx: usize,
     sample_idx: usize,
-    sampler: *smpl.ISampler(Real),
-) Ray {
-    const tracy_zone = ztracy.ZoneN(@src(), "sampleRay");
+    sampler: *math.rng.sampler.ISampler(math.Real),
+) math.Ray {
+    const tracy_zone = ztracy.ZoneN(@src(), "samplemath.Ray");
     defer tracy_zone.End();
 
     // Create a ray originating from the defocus disk and directed at a randomly sampled point around the pixel.
@@ -166,7 +156,7 @@ fn sampleRay(
     // - sampling randomly around the pixel performs multisample antialiasing
     sampler.startPixelSample(.{ col_idx, ctx.row_idx }, sample_idx);
     const offset = sampler.getPixel2D();
-    const sample = ctx.viewport.pixel00_loc + ctx.viewport.pixel_delta_u * math.vec3s(@as(Real, @floatFromInt(col_idx)) + offset[0]) + ctx.viewport.pixel_delta_v * math.vec3s(@as(Real, @floatFromInt(ctx.row_idx)) + offset[1]);
+    const sample = ctx.viewport.pixel00_loc + ctx.viewport.pixel_delta_u * math.vec3s(@as(math.Real, @floatFromInt(col_idx)) + offset[0]) + ctx.viewport.pixel_delta_v * math.vec3s(@as(math.Real, @floatFromInt(ctx.row_idx)) + offset[1]);
 
     const origin =
         if (ctx.b_is_depth_of_field)
@@ -174,35 +164,35 @@ fn sampleRay(
     else
         ctx.camera_position;
     const direction = sample - origin;
-    const time = rand.float(Real);
+    const time = rand.float(math.Real);
 
-    return Ray{
+    return math.Ray{
         .origin = origin,
         .direction = direction,
         .time = time,
     };
 }
 
-fn sampleSquareStratified(rand: std.Random, ctx: *const RenderThreadContext, si: usize, sj: usize) Vec3 {
-    const px = (rand.float(Real) + @as(Real, @floatFromInt(si))) * ctx.recip_sqrt_spp - 0.5;
-    const py = (rand.float(Real) + @as(Real, @floatFromInt(sj))) * ctx.recip_sqrt_spp - 0.5;
+fn sampleSquareStratified(rand: std.Random, ctx: *const RenderThreadContext, si: usize, sj: usize) math.Vec3 {
+    const px = (rand.float(math.Real) + @as(math.Real, @floatFromInt(si))) * ctx.recip_sqrt_spp - 0.5;
+    const py = (rand.float(math.Real) + @as(math.Real, @floatFromInt(sj))) * ctx.recip_sqrt_spp - 0.5;
     return math.vec3(px, py, 0);
 }
 
-fn sampleDefocusDisk(rand: std.Random, ctx: *const RenderThreadContext) Vec3 {
-    const p = rng.sampleUnitDiskXY(rand, 1.0);
+fn sampleDefocusDisk(rand: std.Random, ctx: *const RenderThreadContext) math.Vec3 {
+    const p = math.rng.sampleUnitDiskXY(rand, 1.0);
     return ctx.camera_position + math.vec3s(p[0]) * ctx.defocus_disk_u + math.vec3s(p[1]) * ctx.defocus_disk_v;
 }
 
 /// Computes the pixel color for the scene.
 fn rayColor(
     entity: *const IEntity,
-    ray: *const Ray,
+    ray: *const math.Ray,
     depth: usize,
-    background_color: Color,
+    background_color: math.Color,
     light_entities: ?*const IEntity,
-) Color {
-    const tracy_zone = ztracy.ZoneN(@src(), "rayColor");
+) math.Color {
+    const tracy_zone = ztracy.ZoneN(@src(), "raymath.Color");
     defer tracy_zone.End();
 
     // Bounce recursion depth exceeded.
@@ -215,20 +205,20 @@ fn rayColor(
     var record = HitRecord{};
     const ctx = HitContext{
         .ray = ray,
-        .trange = Interval(Real){
+        .trange = math.Interval(math.Real){
             .min = ray_correction_factor,
-            .max = std.math.inf(Real),
+            .max = std.math.inf(math.Real),
         },
     };
 
-    // Ray hits nothing, return default
+    // math.Ray hits nothing, return default
     if (!entity.hit(&ctx, &record)) {
         return background_color;
     }
 
     var attenuation_color = math.vec3(1, 1, 1);
     var ctx_scatter = ScatterRecord{
-        .random = rng.getThreadRng(),
+        .random = math.rng.getThreadRng(),
         .ray_incoming = ray,
         .hit_record = &record,
 
@@ -256,7 +246,7 @@ fn rayColor(
         }
 
         // If no objects in the scene provide importance sampling PDFs, default to a cosine distribution oriented by the surface normal.
-        var ray_scattered = Ray{
+        var ray_scattered = math.Ray{
             .origin = record.point,
             .direction = undefined,
             .time = ray.time,

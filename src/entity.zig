@@ -3,26 +3,12 @@ const AllocatorError = std.mem.Allocator.Error;
 
 const ztracy = @import("ztracy");
 
-const math = @import("math.zig");
-const Real = math.Real;
-const Vec3 = math.Vec3;
-const Vec2 = math.Vec2;
-const Point3 = Vec3;
-const vec3 = math.vec3;
-const vec2 = math.vec2;
-const vec3s = math.vec3s;
-
-const Interval = @import("interval.zig").Interval;
-const AABB = @import("aabb.zig").AABB;
-
-const Ray = @import("ray.zig").Ray;
+const math = @import("math/math.zig");
 
 const ITexture = @import("texture.zig").ITexture;
 const IMaterial = @import("material.zig").IMaterial;
-const HitContext = @import("ray.zig").HitContext;
-const HitRecord = @import("ray.zig").HitRecord;
-
-const rng = @import("rng.zig");
+const HitContext = @import("hitrecord.zig").HitContext;
+const HitRecord = @import("hitrecord.zig").HitRecord;
 
 const EntityPool = std.heap.MemoryPool(IEntity);
 const EntityPoolError = error{OutOfMemory};
@@ -52,13 +38,13 @@ pub const IEntity = union(enum) {
         };
     }
 
-    pub fn boundingBox(self: *const Self) *const AABB {
+    pub fn boundingBox(self: *const Self) *const math.AABB {
         return switch (self.*) {
             inline else => |*e| &e.aabb,
         };
     }
 
-    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+    pub fn pdfValue(self: *const Self, origin: math.Vec3, direction: math.Vec3) math.Real {
         return switch (self.*) {
             inline else => |*e| 
                 if (std.meta.hasMethod(@TypeOf(e.*), "pdfValue"))
@@ -68,13 +54,13 @@ pub const IEntity = union(enum) {
         };
     }
 
-    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: math.Vec3) math.Vec3 {
         return switch (self.*) {
             inline else => |*e|
                 if (std.meta.hasMethod(@TypeOf(e.*), "sampleDirectionToSurface"))
                     e.sampleDirectionToSurface(rand, origin)
                 else
-                    vec3(1, 0, 0),
+                    math.vec3(1, 0, 0),
         };
     }
 };
@@ -82,13 +68,13 @@ pub const IEntity = union(enum) {
 pub const Translate = struct {
     const Self = @This();
 
-    offset: Vec3,
+    offset: math.Vec3,
     entity: *IEntity,
-    aabb: AABB,
+    aabb: math.AABB,
 
     pub fn initEntity(
         entity_pool: *EntityPool,
-        offset: Vec3, 
+        offset: math.Vec3, 
         entity_to_transform: *IEntity,
     ) EntityPoolError!*IEntity {
         const entity = try entity_pool.create();
@@ -126,14 +112,14 @@ pub const Translate = struct {
 pub const RotateY = struct {
     const Self = @This();
 
-    sin_theta: Real,
-    cos_theta: Real,
+    sin_theta: math.Real,
+    cos_theta: math.Real,
     entity: *IEntity,
-    aabb: AABB,
+    aabb: math.AABB,
 
     pub fn initEntity(
         entity_pool: *EntityPool,
-        angle_degrees: Real, 
+        angle_degrees: math.Real, 
         entity_to_transform: *IEntity,
     ) EntityPoolError!*IEntity {
         const theta = std.math.degreesToRadians(angle_degrees);
@@ -141,24 +127,24 @@ pub const RotateY = struct {
         const cos_theta = @cos(theta);
         const bbox = entity_to_transform.boundingBox();
 
-        var min = math.vec3s(std.math.inf(Real));
-        var max = math.vec3s(-std.math.inf(Real));
+        var min = math.vec3s(std.math.inf(math.Real));
+        var max = math.vec3s(-std.math.inf(math.Real));
 
         for (0..2) |i| {
-            const fi = @as(Real, @floatFromInt(i));
+            const fi = @as(math.Real, @floatFromInt(i));
             const x = fi * bbox.x.max + (1.0 - fi) * bbox.x.min;
 
             for (0..2) |j| {
-                const fj = @as(Real, @floatFromInt(j));
+                const fj = @as(math.Real, @floatFromInt(j));
                 const y = fj * bbox.x.max + (1.0 - fj) * bbox.y.min;
 
                 for (0..2) |k| {
-                    const fk = @as(Real, @floatFromInt(k));
+                    const fk = @as(math.Real, @floatFromInt(k));
                     const z = fk * bbox.x.max + (1.0 - fk) * bbox.z.min;
 
                     const newx = cos_theta * x + sin_theta * z;
                     const newz = -sin_theta * x + cos_theta * z;
-                    const tester = vec3(newx, y, newz);
+                    const tester = math.vec3(newx, y, newz);
 
                     min = @min(min, tester);
                     max = @max(max, tester);
@@ -171,7 +157,7 @@ pub const RotateY = struct {
             .sin_theta = sin_theta,
             .cos_theta = cos_theta,
             .entity = entity_to_transform,
-            .aabb = AABB.init(min, max),
+            .aabb = math.AABB.init(min, max),
         }};
         return entity;
     }
@@ -182,7 +168,7 @@ pub const RotateY = struct {
 
     pub fn hit(self: *const Self, ctx: *const HitContext, hit_record: *HitRecord) bool {
         // ray from world space into object space
-        const ray_rotated = Ray{
+        const ray_rotated = math.Ray{
             .origin = self.worldToObjectSpace(&ctx.ray.origin),
             .direction = self.worldToObjectSpace(&ctx.ray.direction),
             .time = ctx.ray.time,
@@ -202,16 +188,16 @@ pub const RotateY = struct {
         return true;
     }
 
-    inline fn worldToObjectSpace(self: *const Self, v: *const Vec3) Vec3 {
-        return vec3(
+    inline fn worldToObjectSpace(self: *const Self, v: *const math.Vec3) math.Vec3 {
+        return math.vec3(
             self.cos_theta * v[0] - self.sin_theta * v[2],
             v[1],
             self.sin_theta * v[0] + self.cos_theta * v[2],
         );
     }
 
-    inline fn objectToWorldSpace(self: *const Self, v: *const Vec3) Vec3 {
-        return vec3(
+    inline fn objectToWorldSpace(self: *const Self, v: *const math.Vec3) math.Vec3 {
+        return math.vec3(
             self.cos_theta * v[0] + self.sin_theta * v[2],
             v[1],
             -self.sin_theta * v[0] + self.cos_theta * v[2],
@@ -235,7 +221,7 @@ pub const BVHNodeEntity = struct {
 
     left: ?*IEntity,
     right: ?*IEntity,
-    aabb: AABB,
+    aabb: math.AABB,
 
     pub fn init(entity_pool: *EntityPool, entities: []*IEntity, start: usize, end: usize) !Self {
         var self: BVHNodeEntity = undefined;
@@ -251,7 +237,7 @@ pub const BVHNodeEntity = struct {
         } else {
             // node splitting
             // choose axis aligned with longest bbox face
-            var bbox = AABB{};
+            var bbox = math.AABB{};
             for (entities[start..end]) |entity| {
                 bbox = bbox.unionWith(entity.boundingBox());
             }
@@ -280,13 +266,13 @@ pub const BVHNodeEntity = struct {
         return entity;
     }
 
-    // fn hitAABB2(box1: *const AABB, box2: *const AABB, ray: *const Ray, ray_t: Interval(Real)) @Vector(8, bool) {
+    // fn hitAABB2(box1: *const AABB, box2: *const AABB, ray: *const math.Ray, ray_t: math.Interval(math.Real)) @Vector(8, bool) {
     //     const min = std.simd.join(box1.min, box2.min);
     //     const max = std.simd.join(box1.max, box2.max);
     //     const origin = std.simd.join(ray.origin, ray.origin);
     //     const direction = std.simd.join(ray.direction, ray.direction);
-    //     const ray_t_min = std.simd.join(vec3s(ray_t.min), vec3s(ray_t.min));
-    //     const ray_t_max = std.simd.join(vec3s(ray_t.max), vec3s(ray_t.max));
+    //     const ray_t_min = std.simd.join(math.vec3s(ray_t.min), math.vec3s(ray_t.min));
+    //     const ray_t_max = std.simd.join(math.vec3s(ray_t.max), math.vec3s(ray_t.max));
 
     //     const t0 = (min - origin) / direction;
     //     const t1 = (max - origin) / direction;
@@ -321,7 +307,7 @@ pub const EntityCollection = struct {
     const Self = @This();
 
     entities: std.ArrayList(*IEntity),
-    aabb: AABB = .{},
+    aabb: math.AABB = .{},
     bvh_root: ?*IEntity = null,
 
     pub fn init(allocator: std.mem.Allocator) Self {
@@ -382,9 +368,9 @@ pub const EntityCollection = struct {
     }
 
     /// Evenly weighted sum of surface PDFs.
-    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
-        const weight = 1.0 / @as(Real, @floatFromInt(self.entities.items.len));
-        var sum: Real = 0.0;
+    pub fn pdfValue(self: *const Self, origin: math.Vec3, direction: math.Vec3) math.Real {
+        const weight = 1.0 / @as(math.Real, @floatFromInt(self.entities.items.len));
+        var sum: math.Real = 0.0;
         for (self.entities.items) |entity| {
             sum += weight * entity.pdfValue(origin, direction);
         }
@@ -392,7 +378,7 @@ pub const EntityCollection = struct {
     }
 
     /// Pick a random entity.
-    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: math.Vec3) math.Vec3 {
         std.debug.assert(self.entities.items.len > 0);
 
         const idx = rand.intRangeAtMost(usize, 0, self.entities.items.len - 1);
@@ -404,8 +390,8 @@ pub const EntityCollection = struct {
 pub fn createBoxEntity(
     allocator: std.mem.Allocator, 
     entity_pool: *EntityPool, 
-    point_a: Point3, 
-    point_b: Point3, 
+    point_a: math.Point3, 
+    point_b: math.Point3, 
     material: *const IMaterial,
 ) EntityPoolError!*IEntity {
     var sides = try EntityCollection.initEntity(entity_pool, allocator);
@@ -416,17 +402,17 @@ pub fn createBoxEntity(
     const max = @max(point_a, point_b);
 
     const diff = max - min;
-    const dx = vec3( diff[0], 0, 0 );
-    const dy = vec3( 0, diff[1], 0 );
-    const dz = vec3( 0, 0, diff[2] );
+    const dx = math.vec3( diff[0], 0, 0 );
+    const dy = math.vec3( 0, diff[1], 0 );
+    const dz = math.vec3( 0, 0, diff[2] );
 
-    const init_data = [_][3]Point3{
-        .{ vec3(min[0], min[1], max[2]),  dx,  dy }, // front
-        .{ vec3(max[0], min[1], max[2]), -dz,  dy }, // right
-        .{ vec3(max[0], min[1], min[2]), -dx,  dy }, // back
-        .{ vec3(min[0], min[1], min[2]),  dz,  dy }, // left
-        .{ vec3(min[0], max[1], max[2]),  dx, -dz }, // top
-        .{ vec3(min[0], min[1], min[2]),  dx,  dz }, // bottom
+    const init_data = [_][3]math.Point3{
+        .{ math.vec3(min[0], min[1], max[2]),  dx,  dy }, // front
+        .{ math.vec3(max[0], min[1], max[2]), -dz,  dy }, // right
+        .{ math.vec3(max[0], min[1], min[2]), -dx,  dy }, // back
+        .{ math.vec3(min[0], min[1], min[2]),  dz,  dy }, // left
+        .{ math.vec3(min[0], max[1], max[2]),  dx, -dz }, // top
+        .{ math.vec3(min[0], min[1], min[2]),  dx,  dz }, // bottom
     };
     for (init_data) |data| {
         const p0 = data[0];
@@ -443,26 +429,23 @@ pub const QuadEntity = struct {
     const Self = @This();
 
     // Parallelogram parameterization.
-    start_point: Point3,
+    start_point: math.Point3,
     basis: math.OrthoBasis,
-    // axis1: Vec3,
-    // axis2: Vec3,
-    // axis3: Vec3,
 
     // containing plane
-    normal: Vec3,
-    offset: Real,
-    area: Real,
+    normal: math.Vec3,
+    offset: math.Real,
+    area: math.Real,
 
     // Misc.
     material: *const IMaterial,
-    aabb: AABB,
+    aabb: math.AABB,
 
     pub fn initEntity(
         entity_pool: *EntityPool,
-        start: Point3, 
-        axis1: Vec3, 
-        axis2: Vec3, 
+        start: math.Point3, 
+        axis1: math.Vec3, 
+        axis2: math.Vec3, 
         material: *const IMaterial,
     ) EntityPoolError!*IEntity {
         // Calculate the plane containing this quad.
@@ -472,17 +455,14 @@ pub const QuadEntity = struct {
         const normal_unit = math.normalize(normal);
         const offset = math.dot(normal_unit, start);
 
-        const bbox_diag1 = AABB.init(start, start + axis1 + axis2);
-        const bbox_diag2 = AABB.init(start + axis1, start + axis2);
+        const bbox_diag1 = math.AABB.init(start, start + axis1 + axis2);
+        const bbox_diag2 = math.AABB.init(start + axis1, start + axis2);
         const bbox = bbox_diag1.unionWith(&bbox_diag2);
 
         const entity = try entity_pool.create();
         entity.* = IEntity{ .quad = Self{
             .start_point = start,
             .basis = math.OrthoBasis.initFromVectors(axis1, axis2, axis3),
-            // .axis1 = axis1,
-            // .axis2 = axis2,
-            // .axis3 = axis3,
 
             .normal = normal_unit,
             .offset = offset,            
@@ -515,15 +495,15 @@ pub const QuadEntity = struct {
         hit_record.point = hit_point;
         hit_record.material = self.material;
         hit_record.setFrontFaceNormal(ctx.ray, self.normal);
-        hit_record.tex_uv = vec2(alpha, beta);
+        hit_record.tex_uv = math.vec2(alpha, beta);
 
         return true;
     }
 
-    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+    pub fn pdfValue(self: *const Self, origin: math.Vec3, direction: math.Vec3) math.Real {
         const ctx = HitContext{
-            .ray = &Ray{ .origin = origin, .direction = direction },
-            .trange = Interval(Real){ .min = 1e-3, .max = std.math.inf(Real) },
+            .ray = &math.Ray{ .origin = origin, .direction = direction },
+            .trange = math.Interval(math.Real){ .min = 1e-3, .max = std.math.inf(math.Real) },
         };
         var record = HitRecord{};
         if (!self.hit(&ctx, &record)) {
@@ -537,15 +517,15 @@ pub const QuadEntity = struct {
         return dist_sq / (cos * self.area);
     }
 
-    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
-        const u = math.vec3s(rand.float(Real)) * self.basis.get(.u);
-        const v = math.vec3s(rand.float(Real)) * self.basis.get(.v);
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: math.Vec3) math.Vec3 {
+        const u = math.vec3s(rand.float(math.Real)) * self.basis.get(.u);
+        const v = math.vec3s(rand.float(math.Real)) * self.basis.get(.v);
         const p = self.start_point + u + v;
         return p - origin;
     }
 
-    inline fn isInteriorPoint(alpha: Real, beta: Real) bool {
-        const unit = Interval(Real){ .min = 0, .max = 1 };
+    inline fn isInteriorPoint(alpha: math.Real, beta: math.Real) bool {
+        const unit = math.Interval(math.Real){ .min = 0, .max = 1 };
         return (unit.contains(alpha) and unit.contains(beta));
     }
 };
@@ -553,18 +533,18 @@ pub const QuadEntity = struct {
 pub const SphereEntity = struct {
     const Self = @This();
 
-    center: Point3,
-    radius: Real,
+    center: math.Point3,
+    radius: math.Real,
     material: *const IMaterial,
-    aabb: AABB,
+    aabb: math.AABB,
 
     b_is_moving: bool = false,
-    movement_direction: Vec3 = vec3(0, 0, 0),
+    movement_direction: math.Vec3 = math.vec3(0, 0, 0),
 
     pub fn initEntity(
         entity_pool: *EntityPool, 
-        center: Point3, 
-        radius: Real, 
+        center: math.Point3, 
+        radius: math.Real, 
         material: *const IMaterial,
     ) EntityPoolError!*IEntity {
         const rvec = math.vec3s(radius);
@@ -574,16 +554,16 @@ pub const SphereEntity = struct {
             .center = center,
             .radius = radius,
             .material = material,
-            .aabb = AABB.init(center - rvec, center + rvec),
+            .aabb = math.AABB.init(center - rvec, center + rvec),
         }};
         return entity;
     }
 
     pub fn initEntityAnimated(
         entity_pool: *EntityPool, 
-        center_start: Point3, 
-        center_end: Point3, 
-        radius: Real, 
+        center_start: math.Point3, 
+        center_end: math.Point3, 
+        radius: math.Real, 
         material: *const IMaterial,
     ) EntityPoolError!*IEntity {
         const rvec = math.vec3s(radius);
@@ -595,9 +575,9 @@ pub const SphereEntity = struct {
             .material = material,
             .b_is_moving = true,
             .movement_direction = center_end - center_start,
-            .aabb = AABB
+            .aabb = math.AABB
                 .init(center_start - rvec, center_start + rvec)
-                .unionWith(&AABB.init(center_end - rvec, center_end + rvec)),
+                .unionWith(&math.AABB.init(center_end - rvec, center_end + rvec)),
         }};
         return entity;
     }
@@ -634,7 +614,7 @@ pub const SphereEntity = struct {
 
         hit_record.t = root;
         hit_record.point = ctx.ray.at(hit_record.t);
-        const outward_normal = (hit_record.point - center) / vec3s(self.radius);
+        const outward_normal = (hit_record.point - center) / math.vec3s(self.radius);
         hit_record.setFrontFaceNormal(ctx.ray, outward_normal);
         hit_record.tex_uv = getSphereUv(&outward_normal);
         hit_record.material = self.material;
@@ -643,12 +623,12 @@ pub const SphereEntity = struct {
     }
 
     /// NOTE: sphere assumed to be stationary
-    pub fn pdfValue(self: *const Self, origin: Vec3, direction: Vec3) Real {
+    pub fn pdfValue(self: *const Self, origin: math.Vec3, direction: math.Vec3) math.Real {
         std.debug.assert(!self.b_is_moving);
 
         const ctx = HitContext{
-            .ray = &Ray{ .origin = origin, .direction = direction },
-            .trange = Interval(Real){ .min = 1e-3, .max = std.math.inf(Real) },
+            .ray = &math.Ray{ .origin = origin, .direction = direction },
+            .trange = math.Interval(math.Real){ .min = 1e-3, .max = std.math.inf(math.Real) },
         };
         var hit_record = HitRecord{};
         if (!self.hit(&ctx, &hit_record)) {
@@ -663,31 +643,31 @@ pub const SphereEntity = struct {
         return 1.0 / solid_angle;
     }
 
-    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: Vec3) Vec3 {
+    pub fn sampleDirectionToSurface(self: *const Self, rand: std.Random, origin: math.Vec3) math.Vec3 {
         const direction = self.center - origin;
         const dist_sq = math.dot(direction, direction);
         const basis = math.OrthoBasis.init(direction);
         return basis.transform(randomToSphere(rand, self.radius, dist_sq));
     }
 
-    fn move(self: *const Self, time: Real) Point3 {
+    fn move(self: *const Self, time: math.Real) math.Point3 {
         // lerp towards target; assume time is in [0,1]
         return self.center + math.vec3s(time) * self.movement_direction;
     }
 
     /// Returns UV coordinates for the sphere.
-    fn getSphereUv(v: *const Vec3) Vec2 {
+    fn getSphereUv(v: *const math.Vec3) math.Vec2 {
         const theta = std.math.acos(-v[1]);
         const phi = std.math.atan2(-v[2], v[0]) + std.math.pi;
-        return vec2(
+        return math.vec2(
             phi / (2 * std.math.pi),
             theta / std.math.pi,
         );
     }
 
-    fn randomToSphere(rand: std.Random, radius: Real, dist_sq: Real) Vec3 {
-        const r1 = rand.float(Real);
-        const r2 = rand.float(Real);
+    fn randomToSphere(rand: std.Random, radius: math.Real, dist_sq: math.Real) math.Vec3 {
+        const r1 = rand.float(math.Real);
+        const r2 = rand.float(math.Real);
         const z = 1.0 + r2 * (@sqrt(1.0 - radius * radius / dist_sq) - 1.0);
 
         const phi = 2.0 * std.math.pi * r1;

@@ -1,13 +1,12 @@
 const std = @import("std");
 
-const math = @import("math.zig");
+const math = @import("math/math.zig");
 const cam = @import("camera.zig");
 const ent = @import("entity.zig");
 const rdr = @import("render.zig");
 const tex = @import("texture.zig");
 const mat = @import("material.zig");
 const img = @import("image.zig");
-const rng = @import("rng.zig");
 const time = @import("timer.zig");
 
 pub const SceneLoadContext = struct {
@@ -97,7 +96,7 @@ fn loadSceneBalls(ctx: SceneLoadContext) anyerror!Scene {
     if (@import("builtin").mode != .Debug) {
         // This many entities is way too slow in debug builds.
         // Also generates way too much profiling data.
-        const rand = rng.getThreadRng();
+        const rand = math.rng.getThreadRng();
         var a: math.Real = -11.0;
         while (a < 11.0) : (a += 1.0) {
             var b: math.Real = -11.0;
@@ -108,7 +107,7 @@ fn loadSceneBalls(ctx: SceneLoadContext) anyerror!Scene {
                 if (math.length(center - math.vec3(4, 0.2, 0)) > 0.9) {
                     if (choose_mat < 0.8) {
                         // diffuse
-                        const albedo = rng.sampleVec3(rand);
+                        const albedo = math.rng.sampleVec3(rand);
                         textures.appendAssumeCapacity(tex.SolidColorTexture.initTexture(albedo));
                         materials.appendAssumeCapacity(mat.LambertianMaterial.initMaterial(getLastRef(textures.items)));
 
@@ -126,7 +125,7 @@ fn loadSceneBalls(ctx: SceneLoadContext) anyerror!Scene {
 
                     } else if (choose_mat < 0.95) {
                         // metal
-                        const albedo = rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
+                        const albedo = math.rng.sampleVec3Interval(rand, .{ .min = 0.5, .max = 1.0 });
                         const fuzz = rand.float(math.Real) * 0.8;
                         materials.appendAssumeCapacity(mat.MetalMaterial.initMaterial(albedo, fuzz));
                         scene.collection.addAssumeCapacity(try ent.SphereEntity.initEntity(ctx.entity_pool, center, 0.2, getLastRef(materials.items)));
@@ -484,7 +483,7 @@ fn loadSceneRTWFinal(ctx: SceneLoadContext) anyerror!Scene {
     materials.appendAssumeCapacity(mat.LambertianMaterial.initMaterial(getLastRef(textures.items)));
     const material_white = getLastRef(materials.items);
     for (0..1000) |_| {
-        const center = rng.sampleVec3(ctx.rand) * math.vec3s(165.0);
+        const center = math.rng.sampleVec3(ctx.rand) * math.vec3s(165.0);
         try box_of_balls.collection.add(try ent.SphereEntity.initEntity(ctx.entity_pool, center, 10, material_white));
     }
     try box_of_balls.collection.createBvhTree(ctx.entity_pool);

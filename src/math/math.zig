@@ -2,7 +2,14 @@ const std = @import("std");
  
 const ztracy = @import("ztracy");
 
-const Ray = @import("ray.zig").Ray;
+pub const rng = @import("rng.zig");
+
+pub const Ray = @import("ray.zig").Ray;
+
+pub const Interval = @import("interval.zig").Interval;
+pub const INTERVAL_01 = Interval(Real){ .min = 0, .max = 1 };
+
+pub const AABB = @import("aabb.zig").AABB;
 
 /// Always pick a power of two for @Vector sizes.
 fn suggestVectorSize(comptime T: type, min: usize) usize {
@@ -35,6 +42,9 @@ pub const Real = f64;
 pub const Vec3 = Vec(Real, 3);
 pub const Vec2 = Vec(Real, 2);
 pub const Vecx = Vec(Real, 4);
+
+pub const Point3 = Vec3;
+pub const Color = Vec3;
 
 pub const Axis = enum(u2) { 
 

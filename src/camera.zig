@@ -1,10 +1,6 @@
 const std = @import("std");
 
-const math = @import("math.zig");
-const Real = @import("math.zig").Real;
-const Vec3 = @import("math.zig").Vec3;
-const Color = @import("math.zig").Vec3;
-const Point3 = @import("math.zig").Vec3;
+const math = @import("math/math.zig");
 
 /// Render target abstraction that corresponds to a single frame.
 pub const Framebuffer = struct {
@@ -15,14 +11,14 @@ pub const Framebuffer = struct {
     const PPM_PIXEL_NUM_BYTES = "255 255 255\n".len;
 
     allocator: std.mem.Allocator,
-    buffer: []Color,
+    buffer: []math.Color,
     num_rows: usize,
     num_cols: usize,
 
     pub fn init(allocator: std.mem.Allocator, height: usize, width: usize) !Self {
         return .{
             .allocator = allocator,
-            .buffer = try allocator.alloc(Color, height * width),
+            .buffer = try allocator.alloc(math.Color, height * width),
             .num_rows = height,
             .num_cols = width,
         };
@@ -32,43 +28,43 @@ pub const Framebuffer = struct {
         self.allocator.free(self.buffer);
     }
 
-    pub fn clear(self: *Self, clear_color: Color) void {
+    pub fn clear(self: *Self, clear_color: math.Color) void {
         for (self.buffer) |*c| c.* = clear_color;
     }
 
-    pub fn getAspectRatio(self: *const Self) Real {
-        const numerator = @as(Real, @floatFromInt(self.num_cols));
-        const denominator = @as(Real, @floatFromInt(self.num_rows));
+    pub fn getAspectRatio(self: *const Self) math.Real {
+        const numerator = @as(math.Real, @floatFromInt(self.num_cols));
+        const denominator = @as(math.Real, @floatFromInt(self.num_rows));
         return numerator / denominator;
     }
 };
 
 pub const CoordinateBasis = struct {
-    u: Vec3,
-    v: Vec3,
-    w: Vec3,
+    u: math.Vec3,
+    v: math.Vec3,
+    w: math.Vec3,
 };
 
 pub const Camera = struct {
     const Self = @This();
 
     coordinate_basis: CoordinateBasis,
-    position: Point3,
-    fov_vertical: Real,
+    position: math.Point3,
+    fov_vertical: math.Real,
 
     b_is_depth_of_field: bool,
-    lens_focus_dist: Real,
-    defocus_radius: Vec3,
-    defocus_disk_u: Vec3,
-    defocus_disk_v: Vec3,
+    lens_focus_dist: math.Real,
+    defocus_radius: math.Vec3,
+    defocus_disk_u: math.Vec3,
+    defocus_disk_v: math.Vec3,
 
     pub fn init(
-        look_from: Point3, 
-        look_at: Point3, 
-        view_up: Vec3,
-        fov_vertical: Real,
-        lens_focus_dist: Real,
-        defocus_angle_degrees: Real,
+        look_from: math.Point3, 
+        look_at: math.Point3, 
+        view_up: math.Vec3,
+        fov_vertical: math.Real,
+        lens_focus_dist: math.Real,
+        defocus_angle_degrees: math.Real,
     ) Self {
         // coordinate frame basis vectors
         const w = math.normalize(look_from - look_at);
@@ -109,22 +105,22 @@ pub const Camera = struct {
 pub const Viewport = struct {
     const Self = @This();
 
-    width: Real,
-    height: Real,
-    upper_left_corner: Point3,
-    u: Vec3,
-    v: Vec3,
-    pixel_delta_u: Vec3,
-    pixel_delta_v: Vec3,
-    pixel00_loc: Point3,
+    width: math.Real,
+    height: math.Real,
+    upper_left_corner: math.Point3,
+    u: math.Vec3,
+    v: math.Vec3,
+    pixel_delta_u: math.Vec3,
+    pixel_delta_v: math.Vec3,
+    pixel00_loc: math.Point3,
 
     pub fn init(
         image_width: usize,
         image_height: usize,
-        aspect_ratio: Real,
-        fov_vertical: Real,
-        lens_focus_distance: Real,
-        look_from: Point3,
+        aspect_ratio: math.Real,
+        fov_vertical: math.Real,
+        lens_focus_distance: math.Real,
+        look_from: math.Point3,
         coordinate_basis: *const CoordinateBasis,
     ) Viewport {
         // viewport dimensions

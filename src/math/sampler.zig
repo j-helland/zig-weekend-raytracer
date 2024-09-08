@@ -58,6 +58,7 @@ pub fn ISampler(comptime T: type) type {
         independent: IndependentSampler(T),
         stratified: StratifiedSampler(T),
         sobol: SobolSampler(T),
+        // sobol_blue_noise: SobolBlueNoiseSampler(T),
 
         pub fn startPixelSample(self: *Self, pixel: [2]usize, sample_idx: usize) void {
             return switch (self.*) {
@@ -296,6 +297,55 @@ pub fn SobolSampler(comptime T: type) type {
         }
     };
 }
+
+// pub fn SobolBlueNoiseSampler(comptime T: type) type {
+//     requireFloat(T);
+
+//     return struct {
+//         const Self = @This();
+
+//         log2_samples_per_pixel: std.math.Log2Int(usize),
+//         num_base4_digits: std.math.Log2Int(usize),
+//         randomizer_strategy: RandomizerStrategy,
+//         seed: u32,
+
+//         pub fn initSampler(
+//             samples_per_pixel: u32,
+//             image_width: u32,
+//             image_height: u32,
+//             randomizer_strategy: RandomizerStrategy,
+//             seed: u32,
+//         ) error{Overflow}!ISampler(T) {
+//             const resolution = try std.math.ceilPowerOfTwo(u32, @max(image_width, image_height));
+//             const log2_samples_per_pixel = std.math.log2_int(u32, samples_per_pixel);
+//             const log4_samples_per_pixel = (log2_samples_per_pixel + 1) / 2;
+//             const num_base4_digits = std.math.log2_int(u32, resolution) + log4_samples_per_pixel;
+
+//             return ISampler(T){ .sobol_blue_noise = Self{
+//                 .log2_samples_per_pixel = log2_samples_per_pixel,
+//                 .num_base4_digits = num_base4_digits,
+//                 .randomizer_strategy = randomizer_strategy,
+//                 .seed = seed,
+//             }};
+//         }
+
+//         pub fn startPixelSample(self: *Self, pixel: [2]usize, sample_idx: usize) void {
+//         }
+
+//         pub fn get2D(self: *Self) [2]T {
+
+//         }
+
+//         pub fn getPixel2D(self: *Self) [2]T {
+
+//         }
+
+//         fn samplesPerPixel(self: *const Self) u32 {
+//             return 1 << self.log2_samples_per_pixel;
+//         }
+//     };
+// }
+
 // test "SobolSampler" {
 //     const math = @import("math.zig");
 

@@ -4,14 +4,14 @@ const AllocatorError = std.mem.Allocator.Error;
 const ztracy = @import("ztracy");
 const zstbi = @import("zstbi");
 
-const math = @import("math.zig");
+const math = @import("math/math.zig");
+const rng = math.rng;
 const scn = @import("scene.zig");
-const rng = @import("rng.zig");
 const IEntity = @import("entity.zig").IEntity;
 const Renderer = @import("render.zig").Renderer;
 const Camera = @import("camera.zig").Camera;
 const Framebuffer = @import("camera.zig").Framebuffer;
-const WriterPPM = @import("writer.zig").WriterPPM;
+const WriterPPM = @import("writer/writer.zig").WriterPPM;
 const Timer = @import("timer.zig").Timer;
 
 const ArgParser = @import("argparser.zig").ArgParser;

@@ -2,15 +2,7 @@ const std = @import("std");
 
 const ztracy = @import("ztracy");
 
-const math = @import("math.zig");
-const Color = math.Vec3;
-const Point = math.Vec3;
-const Vec2 = math.Vec2;
-const vec3 = math.vec3;
-
-const Interval = @import("interval.zig").Interval;
-const INTERVAL_01 = @import("interval.zig").INTERVAL_01;
-
+const math = @import("math/math.zig");
 const img = @import("image.zig");
 
 const DEBUG_IMAGE = img.Image{};
@@ -31,7 +23,7 @@ pub const ITexture = union(enum) {
         }
     }
 
-    pub fn value(self: *const Self, uv: Vec2, point: *const Point) Color {
+    pub fn value(self: *const Self, uv: math.Vec2, point: *const math.Point3) math.Color {
         return switch (self.*) {
             inline else => |*t| t.value(uv, point),
         };
@@ -54,7 +46,7 @@ pub const ImageTexture = struct {
     }
 
     /// Samples the image pixel given a UV coordinate. Colors are returned in linear colorspace.
-    pub fn value(self: *const Self, uv: Vec2, _: *const Point) Color {
+    pub fn value(self: *const Self, uv: math.Vec2, _: *const math.Point3) math.Color {
         const tracy_zone = ztracy.ZoneN(@src(), "ImageTexture::value");
         defer tracy_zone.End();
 
@@ -62,8 +54,8 @@ pub const ImageTexture = struct {
             return pixelToColor(DEBUG_IMAGE.getPixel(0, 0));
         }
 
-        const u = INTERVAL_01.clamp(uv[0]);
-        const v = 1.0 - INTERVAL_01.clamp(uv[1]); // flip to image coordinates
+        const u = math.INTERVAL_01.clamp(uv[0]);
+        const v = 1.0 - math.INTERVAL_01.clamp(uv[1]); // flip to image coordinates
 
         const fwidth = @as(math.Real, @floatFromInt(self.image.getWidth()));
         const fheight = @as(math.Real, @floatFromInt(self.image.getHeight()));
@@ -75,9 +67,9 @@ pub const ImageTexture = struct {
         return pixelToColor(pixel);
     }
 
-    fn pixelToColor(pixel: []const u8) Color {
+    fn pixelToColor(pixel: []const u8) math.Color {
         const color_scale = math.vec3s(1.0 / 255.0);
-        return math.linearizeColorSpace(color_scale * vec3(
+        return math.linearizeColorSpace(color_scale * math.vec3(
             @as(math.Real, @floatFromInt(pixel[0])),
             @as(math.Real, @floatFromInt(pixel[1])),
             @as(math.Real, @floatFromInt(pixel[2])),
@@ -88,13 +80,13 @@ pub const ImageTexture = struct {
 pub const SolidColorTexture = struct {
     const Self = @This();
 
-    color: Color,
+    color: math.Color,
 
-    pub fn initTexture(color: Color) ITexture {
+    pub fn initTexture(color: math.Color) ITexture {
         return ITexture{ .solid_color = Self{ .color = color } };
     }
 
-    pub fn value(self: *const Self, uv: Vec2, point: *const Point) Color {
+    pub fn value(self: *const Self, uv: math.Vec2, point: *const math.Point3) math.Color {
         _ = uv;
         _ = point;
         return self.color;
@@ -116,7 +108,7 @@ pub const CheckerboardTexture = struct {
         } };
     }
 
-    pub fn value(self: *const Self, uv: Vec2, point: *const Point) Color {
+    pub fn value(self: *const Self, uv: math.Vec2, point: *const math.Point3) math.Color {
         const x_int = @as(i32, @intFromFloat((@floor(self.inv_scale * point[0]))));
         const y_int = @as(i32, @intFromFloat((@floor(self.inv_scale * point[1]))));
         const z_int = @as(i32, @intFromFloat((@floor(self.inv_scale * point[2]))));

@@ -1,11 +1,6 @@
 const std = @import("std");
 
-const math = @import("math.zig");
-const Real = math.Real;
-const Color = math.Vec3;
-
-const Interval = @import("interval.zig").Interval;
- 
+const math = @import("../math/math.zig");
 const mmap = @import("mmap.zig");
 
 pub const WriterPPM = struct {
@@ -18,7 +13,7 @@ pub const WriterPPM = struct {
     allocator: std.mem.Allocator,
     thread_pool: *std.Thread.Pool,
 
-    pub fn write(self: *Self, out_path: []const u8, data: []const Color, num_cols: usize, num_rows: usize) !void {
+    pub fn write(self: *Self, out_path: []const u8, data: []const math.Color, num_cols: usize, num_rows: usize) !void {
         // Create and memory map file
         const header = try std.fmt.allocPrint(self.allocator, PPM_HEADER_FMT, .{ num_cols, num_rows });
         defer self.allocator.free(header);
@@ -58,7 +53,7 @@ pub const WriterPPM = struct {
 
 const WriterThreadContext = struct {
     out_ptr: []u8,
-    data: []const Color,
+    data: []const math.Color,
 };
 fn writeChunk(ctx: WriterThreadContext) void {
     var out_idx: usize = 0;
@@ -70,9 +65,9 @@ fn writeChunk(ctx: WriterThreadContext) void {
     }
 }
 
-fn encodeColor(_color: Color) [3]u8 {
+fn encodeColor(_color: math.Color) [3]u8 {
     const rgb_max = 256.0;
-    const intensity = Interval(Real){ .min = 0.0, .max = 0.999 };
+    const intensity = math.Interval(math.Real){ .min = 0.0, .max = 0.999 };
 
     // Hack to resolve pixel acne from NaN issues
     var color = discardNaNs(_color);
@@ -85,7 +80,7 @@ fn encodeColor(_color: Color) [3]u8 {
     return .{ir, ig, ib};
 }
 
-inline fn discardNaNs(color: Color) Color {
+inline fn discardNaNs(color: math.Color) math.Color {
     return math.vec3(
         clampNaN(color[0]),
         clampNaN(color[1]),
@@ -93,7 +88,7 @@ inline fn discardNaNs(color: Color) Color {
     );
 }
 
-inline fn clampNaN(x: Real) Real {
+inline fn clampNaN(x: math.Real) math.Real {
     if (std.math.isNan(x)) return 0;
     return x;
 }
