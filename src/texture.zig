@@ -23,9 +23,17 @@ pub const ITexture = union(enum) {
     checkerboard: CheckerboardTexture,
     image: ImageTexture,
 
-    pub fn value(self: Self, uv: Vec2, point: *const Point) Color {
-        return switch (self) {
-            inline else => |t| t.value(uv, point),
+    pub fn deinit(self: *Self) void {
+        switch (self.*) {
+            inline else => |*t|
+                if (std.meta.hasMethod(@TypeOf(t.*), "deinit"))
+                    t.deinit(),
+        }
+    }
+
+    pub fn value(self: *const Self, uv: Vec2, point: *const Point) Color {
+        return switch (self.*) {
+            inline else => |*t| t.value(uv, point),
         };
     }
 };
@@ -33,10 +41,16 @@ pub const ITexture = union(enum) {
 pub const ImageTexture = struct {
     const Self = @This();
 
-    image: *const img.Image,
+    image: img.Image,
 
-    pub fn initTexture(image: *const img.Image) ITexture {
-        return ITexture{ .image = Self{ .image = image } };
+    pub fn initTextureFromPath(path: [:0]const u8) !ITexture {
+        return ITexture{ .image = Self{ 
+            .image = try img.Image.initFromFile(path),
+        }};
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.image.deinit();
     }
 
     /// Samples the image pixel given a UV coordinate. Colors are returned in linear colorspace.

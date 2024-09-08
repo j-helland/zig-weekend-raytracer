@@ -24,6 +24,9 @@ const HitRecord = @import("ray.zig").HitRecord;
 
 const rng = @import("rng.zig");
 
+const EntityPool = std.heap.MemoryPool(IEntity);
+const EntityPoolError = error{OutOfMemory};
+
 /// INTERFACE
 pub const IEntity = union(enum) {
     const Self = @This();
@@ -84,10 +87,10 @@ pub const Translate = struct {
     aabb: AABB,
 
     pub fn initEntity(
-        entity_pool: *std.heap.MemoryPool(IEntity),
+        entity_pool: *EntityPool,
         offset: Vec3, 
         entity_to_transform: *IEntity,
-    ) !*IEntity {
+    ) EntityPoolError!*IEntity {
         const entity = try entity_pool.create();
         entity.* = IEntity{ .translate = Self{ 
             .offset = offset, 
@@ -129,10 +132,10 @@ pub const RotateY = struct {
     aabb: AABB,
 
     pub fn initEntity(
-        entity_pool: *std.heap.MemoryPool(IEntity),
+        entity_pool: *EntityPool,
         angle_degrees: Real, 
         entity_to_transform: *IEntity,
-    ) !*IEntity {
+    ) EntityPoolError!*IEntity {
         const theta = std.math.degreesToRadians(angle_degrees);
         const sin_theta = @sin(theta);
         const cos_theta = @cos(theta);
@@ -234,7 +237,7 @@ pub const BVHNodeEntity = struct {
     right: ?*IEntity,
     aabb: AABB,
 
-    pub fn init(entity_pool: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !Self {
+    pub fn init(entity_pool: *EntityPool, entities: []*IEntity, start: usize, end: usize) !Self {
         var self: BVHNodeEntity = undefined;
 
         // Populate left/right children.
@@ -269,7 +272,7 @@ pub const BVHNodeEntity = struct {
         return self;
     }
 
-    pub fn initEntity(entity_pool: *std.heap.MemoryPool(IEntity), entities: []*IEntity, start: usize, end: usize) !*IEntity {
+    pub fn initEntity(entity_pool: *EntityPool, entities: []*IEntity, start: usize, end: usize) EntityPoolError!*IEntity {
         const entity = try entity_pool.create();
         entity.* = IEntity{ 
             .bvh_node = try init(entity_pool, entities, start, end), 
@@ -325,7 +328,7 @@ pub const EntityCollection = struct {
         return .{ .entities = std.ArrayList(*IEntity).init(allocator) };
     }
 
-    pub fn initEntity(entity_pool: *std.heap.MemoryPool(IEntity), allocator: std.mem.Allocator) !*IEntity {
+    pub fn initEntity(entity_pool: *EntityPool, allocator: std.mem.Allocator) EntityPoolError!*IEntity {
         const entity = try entity_pool.create();
         entity.* = IEntity{ .collection = Self.init(allocator) };
         return entity;
@@ -346,7 +349,7 @@ pub const EntityCollection = struct {
         self.aabb = self.aabb.unionWith(entity.boundingBox());
     }
 
-    pub fn createBvhTree(self: *Self, entity_pool: *std.heap.MemoryPool(IEntity)) !void {
+    pub fn createBvhTree(self: *Self, entity_pool: *EntityPool) !void {
         self.bvh_root = try BVHNodeEntity.initEntity(entity_pool, self.entities.items, 0, self.entities.items.len);
     }
 
@@ -400,11 +403,11 @@ pub const EntityCollection = struct {
 /// composite of quads arranged in a box; contained in EntityCollection
 pub fn createBoxEntity(
     allocator: std.mem.Allocator, 
-    entity_pool: *std.heap.MemoryPool(IEntity), 
+    entity_pool: *EntityPool, 
     point_a: Point3, 
     point_b: Point3, 
     material: *const IMaterial,
-) !*IEntity {
+) EntityPoolError!*IEntity {
     var sides = try EntityCollection.initEntity(entity_pool, allocator);
     try sides.collection.entities.ensureTotalCapacity(6);
 
@@ -456,12 +459,12 @@ pub const QuadEntity = struct {
     aabb: AABB,
 
     pub fn initEntity(
-        entity_pool: *std.heap.MemoryPool(IEntity),
+        entity_pool: *EntityPool,
         start: Point3, 
         axis1: Vec3, 
         axis2: Vec3, 
         material: *const IMaterial,
-    ) !*IEntity {
+    ) EntityPoolError!*IEntity {
         // Calculate the plane containing this quad.
         const normal = math.cross(axis1, axis2);
         const axis3 = normal / math.vec3s(math.dot(normal, normal));
@@ -559,11 +562,11 @@ pub const SphereEntity = struct {
     movement_direction: Vec3 = vec3(0, 0, 0),
 
     pub fn initEntity(
-        entity_pool: *std.heap.MemoryPool(IEntity), 
+        entity_pool: *EntityPool, 
         center: Point3, 
         radius: Real, 
         material: *const IMaterial,
-    ) !*IEntity {
+    ) EntityPoolError!*IEntity {
         const rvec = math.vec3s(radius);
 
         const entity = try entity_pool.create();
@@ -577,12 +580,12 @@ pub const SphereEntity = struct {
     }
 
     pub fn initEntityAnimated(
-        entity_pool: *std.heap.MemoryPool(IEntity), 
+        entity_pool: *EntityPool, 
         center_start: Point3, 
         center_end: Point3, 
         radius: Real, 
         material: *const IMaterial,
-    ) !*IEntity {
+    ) EntityPoolError!*IEntity {
         const rvec = math.vec3s(radius);
 
         const entity = try entity_pool.create();
