@@ -39,12 +39,16 @@ pub const OwenFastRandomizer = struct {
     pub inline fn apply(self: *const Self, _v: u32) u32 {
         var v = _v;
 
-        v = @bitReverse(v);
-        v ^= @mulWithOverflow(v, 0x3d20adea)[0]; // v ^= v * 0x3d20adea
-        v = @addWithOverflow(v, self.seed)[0]; // v += seed;
-        v = @mulWithOverflow(v, (self.seed >> 16) | 1)[0]; // v *= (seed >> 16) | 1;
-        v ^= @mulWithOverflow(v, 0x05526c56)[0]; // v ^= v * 0x05526c56;
-        v ^= @mulWithOverflow(v, 0x53a22864)[0]; // v ^= v * 0x53a22864;
+        // zig fmt: off
+        // Original algorithm (C/C++) seemingly doesn't care about overflow. 
+        // If we don't handle this explicitly in Zig, we'll get runtime failures while sampling.
+        v  = @bitReverse(v);
+        v ^= @mulWithOverflow(v, 0x3d20adea)[0];            // v ^= v * 0x3d20adea
+        v  = @addWithOverflow(v, self.seed)[0];             // v += seed;
+        v  = @mulWithOverflow(v, (self.seed >> 16) | 1)[0]; // v *= (seed >> 16) | 1;
+        v ^= @mulWithOverflow(v, 0x05526c56)[0];            // v ^= v * 0x05526c56;
+        v ^= @mulWithOverflow(v, 0x53a22864)[0];            // v ^= v * 0x53a22864;
+        // zig fmt: on
         return @bitReverse(v);
     }
 };
@@ -58,7 +62,6 @@ pub fn ISampler(comptime T: type) type {
         independent: IndependentSampler(T),
         stratified: StratifiedSampler(T),
         sobol: SobolSampler(T),
-        // sobol_blue_noise: SobolBlueNoiseSampler(T),
 
         pub fn startPixelSample(self: *Self, pixel: [2]usize, sample_idx: usize) void {
             return switch (self.*) {
