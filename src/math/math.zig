@@ -23,8 +23,8 @@ fn Vec(comptime T: type, size: comptime_int) type {
 
 pub inline fn vecLen(comptime V: type) comptime_int {
     return switch (@typeInfo(V)) {
-        .Vector => |info| info.len, 
-        .Array => |info| info.len,
+        .vector => |info| info.len, 
+        .array => |info| info.len,
         inline else => @compileError("Invalid vector type " ++ @typeName(V)),
     };
 }

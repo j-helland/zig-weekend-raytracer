@@ -84,7 +84,7 @@ pub fn ISampler(comptime T: type) type {
 }
 
 fn requireFloat(comptime T: type) void {
-    if (@typeInfo(T) != .Float) {
+    if (@typeInfo(T) != .float) {
         @compileError("Type is not a float: " ++ @typeName(T));
     }
 }
@@ -181,8 +181,6 @@ pub fn SobolSampler(comptime T: type) type {
             randomizer_strategy: RandomizerStrategy,
             seed: u32,
         ) error{Overflow}!ISampler(T) {
-            std.debug.assert(@typeInfo(T) == .Float);
-
             if (!std.math.isPowerOfTwo(samples_per_pixel)) {
                 std.log.warn("Non power of two samples per pixel will perform poorly with sobol sampling: {d}", .{samples_per_pixel});
             }

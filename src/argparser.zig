@@ -41,7 +41,7 @@ pub fn ArgParser(comptime T: type) type {
             };
 
             // preload so we can detect unknown user args
-            inline for (@typeInfo(T).Struct.fields) |field| {
+            inline for (@typeInfo(T).@"struct".fields) |field| {
                 try self.argval_cache.put(field.name, null);
             }
 
@@ -67,7 +67,7 @@ pub fn ArgParser(comptime T: type) type {
                 try self.cacheArgVal(argval);
             }
 
-            inline for (@typeInfo(T).Struct.fields) |field| {
+            inline for (@typeInfo(T).@"struct".fields) |field| {
                 const maybe_val = self.argval_cache.get(field.name).?;  // all field keys were populated during init
                 if (maybe_val) |val| {
                     @field(self.args_parsed, field.name) = try self.parseConcreteValue(field.type, val);
@@ -94,14 +94,14 @@ pub fn ArgParser(comptime T: type) type {
         pub fn printUsage(self: *const Self, writer: std.fs.File.Writer) anyerror!void {
             try writer.print("Usage:\n", .{});
 
-            inline for (@typeInfo(T).Struct.fields) |field| {
+            inline for (@typeInfo(T).@"struct".fields) |field| {
                 if (std.meta.hasMethod(field.type, "printUsage")) {
                     try @field(self.args_parsed, field.name).printUsage(writer);
 
                 } else {
                     try writer.print("\t--{s}=<{any}>\n", .{field.name, field.type});
                     switch (@typeInfo(field.type)) {
-                        .Enum => {
+                        .@"enum" => {
                             inline for (comptime std.enums.values(field.type)) |e| {
                                 try writer.print("\t\t{s}\n", .{@tagName(e)});
                             }
@@ -195,16 +195,16 @@ inline fn isRequiredArg(field: std.builtin.Type.StructField) bool {
 }
 
 inline fn isEnumType(comptime T: type) bool {
-    return (@typeInfo(T) == .Enum);
+    return (@typeInfo(T) == .@"enum");
 }
 
 inline fn isOptionalType(comptime T: type) bool {
-    return (@typeInfo(T) == .Optional);
+    return (@typeInfo(T) == .optional);
 }
 
 inline fn unwrapOptionalType(comptime T: type) type {
     return 
-        if (isOptionalType(T)) @typeInfo(T).Optional.child
+        if (isOptionalType(T)) @typeInfo(T).optional.child
         else T;
 }
 
