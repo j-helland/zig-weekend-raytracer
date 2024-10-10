@@ -3,4 +3,7 @@ zig-out/
 .zig-cache/
 
 # misc.
+.DS_Store
 *.ppm
+examples/
+goals.md
