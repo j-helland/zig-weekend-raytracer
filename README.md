@@ -16,7 +16,7 @@ Basic usage help can be seen by passing the `--help` (or simply `-h`) flag to th
 The output is a PPM image, which is very space inefficient. However, the file writing should be quite fast thanks to multithreaded pixel writes and memory mapping of the output file.
 
 ## Zig Version 
-Zig compiler version: `0.14.0-dev.1511+54b668f8a`
+Zig compiler version: `0.14.0-dev.1827+e1e151df0`
 
 **Disclaimer**: I developed this on a MacBook Pro M1, macOS 13.6.3 (22G436).
 
