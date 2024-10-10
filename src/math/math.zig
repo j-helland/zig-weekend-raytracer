@@ -112,7 +112,7 @@ pub fn addUlpMagnitude(
     ulps: std.meta.Int(.unsigned, @bitSizeOf(@TypeOf(x)))
 ) @TypeOf(x) {
     const T = @TypeOf(x);
-    if (@typeInfo(T) != .Float) {
+    if (@typeInfo(T) != .float) {
         @compileError("Invalid float type: " ++ @typeName(T));
     }
     const UT = std.meta.Int(.unsigned, @bitSizeOf(T));

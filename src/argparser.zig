@@ -50,7 +50,7 @@ pub fn ArgParser(comptime T: type) type {
 
         /// Clears parsing state from previous invocation.
         pub fn reset(self: *Self) void {
-            inline for (@typeInfo(T).Struct.fields) |field| {
+            inline for (@typeInfo(T).@"struct".fields) |field| {
                 self.argval_cache.putAssumeCapacity(field.name, null);
             }
             self.args_parsed = undefined;
