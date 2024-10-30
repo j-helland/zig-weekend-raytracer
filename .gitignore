@@ -5,5 +5,4 @@ zig-out/
 # misc.
 .DS_Store
 *.ppm
-examples/
 goals.md

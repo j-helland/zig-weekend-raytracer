@@ -1,12 +1,15 @@
 # About
 This is a Zig implementation of a CPU raytracer, based primarily on Peter Shirley's fantastic [Ray Tracing in One Weekend](https://raytracing.github.io) series.
 
+![](examples/cornell-10k-50-importance-sampling.png)
+
 ## Notable Features
 - Multithreaded raycasting.
 - Fast image writes (multithreading + file memory mapping).
 - BVH acceleration.
 - Quasi monte carlo sampling of rays via Sobol sequences.
 - Importance sampling of light emitting surfaces.
+- Texture sampling.
 
 # Usage
 This repository is self-contained i.e. no external dependencies should be needed to run the binary.
